@@ -4,5 +4,5 @@ Name: dual_arm
 Description: Description of dual_arm
 Version: 0.0.0
 Cflags: -I/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/include
-Libs: -L${prefix}/lib -ldual_arm
+Libs: -L${prefix}/lib 
 Requires: roscpp std_msgs

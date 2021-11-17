@@ -4,6 +4,7 @@ file(REMOVE_RECURSE
   "CMakeFiles/dualarm_lib.dir/src/quadraticprogram.cpp.o"
   "CMakeFiles/dualarm_lib.dir/src/robotmodel.cpp.o"
   "CMakeFiles/dualarm_lib.dir/src/trajectory.cpp.o"
+  "CMakeFiles/dualarm_lib.dir/src/motionplan.cpp.o"
   "/home/kist/KIST-Dual-Arm-ROS/devel/lib/libdualarm_lib.pdb"
   "/home/kist/KIST-Dual-Arm-ROS/devel/lib/libdualarm_lib.so"
 )

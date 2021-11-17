@@ -2,7 +2,7 @@
 CATKIN_PACKAGE_PREFIX = ""
 PROJECT_PKG_CONFIG_INCLUDE_DIRS = "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/include".split(';') if "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/include" != "" else []
 PROJECT_CATKIN_DEPENDS = "roscpp;std_msgs".replace(';', ' ')
-PKG_CONFIG_LIBRARIES_WITH_PREFIX = "-ldual_arm".split(';') if "-ldual_arm" != "" else []
+PKG_CONFIG_LIBRARIES_WITH_PREFIX = "".split(';') if "" != "" else []
 PROJECT_NAME = "dual_arm"
 PROJECT_SPACE_DIR = "/home/kist/KIST-Dual-Arm-ROS/devel"
 PROJECT_VERSION = "0.0.0"

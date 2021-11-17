@@ -131,12 +131,8 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/kist/KIST-Dual-Arm-ROS/build/gtest/cmake_install.cmake")
-  include("/home/kist/KIST-Dual-Arm-ROS/build/joystick_drivers/joystick_drivers/cmake_install.cmake")
   include("/home/kist/KIST-Dual-Arm-ROS/build/dual_arm/cmake_install.cmake")
-  include("/home/kist/KIST-Dual-Arm-ROS/build/joystick_drivers/joy/cmake_install.cmake")
-  include("/home/kist/KIST-Dual-Arm-ROS/build/joystick_drivers/ps3joy/cmake_install.cmake")
-  include("/home/kist/KIST-Dual-Arm-ROS/build/joystick_drivers/spacenav_node/cmake_install.cmake")
-  include("/home/kist/KIST-Dual-Arm-ROS/build/joystick_drivers/wiimote/cmake_install.cmake")
+  include("/home/kist/KIST-Dual-Arm-ROS/build/tf_test/cmake_install.cmake")
 
 endif()
 

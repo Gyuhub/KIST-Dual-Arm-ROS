@@ -1,7 +1,6 @@
  #include "robotmodel.h"
 
  #define JDOF 15
-// due to increased 
 
  CModel::CModel()
  {
@@ -23,12 +22,13 @@ void CModel::Initialize()
 	_k = JDOF;
 	_q.setZero(_k);
 	_qdot.setZero(_k);
+	_qddot.setZero(_k); // qddot initialize for calculating body-fixed angular velocity
 	_zero_vec_joint.setZero(_k);
 
 	_id_left_hand = 8;
-	_id_right_hand = 15; // due to increased joint of hands
+	_id_right_hand = 15;
 	_id_left_shoulder = 2;
-	_id_right_shoulder = 9; // due to increased joint of hands
+	_id_right_shoulder = 9;
 
 	_max_joint_torque.setZero(_k);
 	_min_joint_torque.setZero(_k);
@@ -74,8 +74,10 @@ void CModel::Initialize()
 	_q_scalar_left_hand = 0.0;
 	_q_scalar_right_hand = 0.0;
 
-	//_w_left_hand.setZero();
-	//_w_right_hand.setZero();
+	_w_left_hand.setZero();
+	_w_right_hand.setZero();
+	_omega_left_hand.setZero();
+	_omega_right_hand.setZero();
 
 	set_robot_config();
 	load_model();
@@ -84,7 +86,7 @@ void CModel::Initialize()
 void CModel::load_model()
 {
 	//read urdf model
-	RigidBodyDynamics::Addons::URDFReadFromFile("/home/kist/KIST-Dual-Arm-Operational-Space-Control-ROS/src/dual_arm/model/dualarm_hands_mod_sim.urdf", &_model, false, true);
+	RigidBodyDynamics::Addons::URDFReadFromFile("/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/model/test.urdf", &_model, false, true);
 
 	//body id 1: body_link (trunk)
 	//body id 8: LWrR_Link (left hand)
@@ -97,7 +99,7 @@ void CModel::load_model()
 	}
 
 	_global_rotate.setIdentity(); //x방향이 앞뒤 방향이 되도록 변경하기 위하여...	
-	_global_rotate = CustomMath::GetBodyRotationMatrix(0.0, 0.0, -90.0 * DEG2RAD);
+	//_global_rotate = CustomMath::GetBodyRotationMatrix(0.0, 0.0, -90.0 * DEG2RAD);
 	//_global_rotate = CustomMath::GetBodyRotationMatrix(0.0, 0.0, 90.0 * DEG2RAD);
 
 	_bool_model_update = true; //check model update
@@ -105,14 +107,16 @@ void CModel::load_model()
 	cout << "Model Loading Complete." << endl << endl;
 }
 
-void CModel::update_kinematics(VectorXd & q, VectorXd & qdot)
+void CModel::update_kinematics(VectorXd & q, VectorXd & qdot, VectorXd & qddot) // Modified => previously there is no qddot!
 {
 	_q = q;
 	_qdot = qdot;
+	_qddot = qddot;
 
 	if (_bool_model_update == true)
 	{
-		RigidBodyDynamics::UpdateKinematicsCustom(_model, &_q, &_qdot, NULL); //update kinematics
+		// RigidBodyDynamics::UpdateKinematicsCustom(_model, &_q, &_qdot, NULL); //update kinematics
+		RigidBodyDynamics::UpdateKinematicsCustom(_model, &_q, &_qdot, &_qddot); //update kinematics
 	}
 	else
 	{
@@ -197,8 +201,12 @@ void CModel::calculate_EE_velocity()
 	{
 		_xdot_left_hand = _J_left_hand * _qdot;
 		_xdot_right_hand = _J_right_hand * _qdot;
-		_w_left_hand = _global_rotate * _xdot_left_hand.tail(3);
-		_w_right_hand = _global_rotate * _xdot_right_hand.tail(3);
+		// _w_left_hand = _global_rotate * _xdot_left_hand.tail(3);
+		// _w_right_hand = _global_rotate * _xdot_right_hand.tail(3);
+		_w_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_left_hand);
+		_w_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_right_hand);
+		_omega_left_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false);
+		_omega_right_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false);
 		//_w_left_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false).head(3);
 		//_w_right_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false).head(3);
 	}
@@ -212,13 +220,11 @@ void CModel::calculate_Euler_To_Quat() // !!!!!!!!!!!!!!!!!!!!!
 {
 	if (_bool_position_orientation_update == true)
 	{
-		//_aa_left_hand = _R_left_hand;
-		//_aa_right_hand = _R_right_hand;
+		_aa_left_hand = _R_left_hand;
+		_aa_right_hand = _R_right_hand;
 
-		//_q_left_hand = _aa_left_hand;
-		//_q_right_hand = _aa_right_hand;
-		_q_left_hand = CustomMath::CalcMatrixToQuaternion(_R_left_hand);
-		_q_right_hand = CustomMath::CalcMatrixToQuaternion(_R_right_hand);
+		_q_left_hand = _aa_left_hand;
+		_q_right_hand = _aa_right_hand;
 
 		_q_vec_left_hand = _q_left_hand.vec();
 		_q_vec_right_hand = _q_right_hand.vec();
@@ -236,10 +242,14 @@ void CModel::set_robot_config()
 
 	_position_local_task_left_hand.setZero();
 	_position_local_task_left_hand(0) = -0.017;
-	_position_local_task_left_hand(1) = -0.13; //-0.08;
+	_position_local_task_left_hand(1) = -0.104748 - 0.048; //-0.08 for base of hand;
+	// _position_local_task_left_hand(1) = -0.104748 - 0.048; // -0.48 for middle point between each first rotating joints of gripper
+	// _position_local_task_left_hand(1) = -0.104748 - 0.135; // -0.135 for end point which the gripper hold object
+	_position_local_task_left_hand(2) = 0.0;
 	_position_local_task_right_hand.setZero();
-	_position_local_task_right_hand(0) = -0.017;
-	_position_local_task_right_hand(1) = -0.13; //-0.08;
+	_position_local_task_right_hand(0) = -0.017 + 0.010945;
+	_position_local_task_right_hand(1) = -0.104748 - 0.044721; //-0.08 for base of hand;
+	_position_local_task_right_hand(2) = 0.0 - 0.006325;
 
 	_max_joint_torque(0) = 400.0;
 	_max_joint_torque(1) = 85.8;

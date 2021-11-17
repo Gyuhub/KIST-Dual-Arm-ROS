@@ -1867,7 +1867,7 @@ void simulate()
                 //--------------------------------------------------------------------------------------------------//
                 //--------------------------------------------------------------------------------------------------//
                 // controller                                
-                Control.read(d->time, d->qpos, d->qvel, d->qfrc_applied);
+                Control.read(d->time, d->qpos, d->qvel, d->qacc);
                 Control.control_mujoco(_joy_command);
                 Control.write(d->ctrl);
                 //--------------------------------------------------------------------------------------------------//
@@ -2051,14 +2051,29 @@ void init(void)
 // ROS
 
 // Pthread ROS routine function
-void *ros_com(void *data)
+void *ROSRoutine(void *nh)
 {
-  while(ros::ok())
-  {
-    ros::NodeHandle _nh;
-	ros::Subscriber _sub = _nh.subscribe("joy_command", 19, JoyCallback);
-    ros::spin();
-  }
+    // ros::NodeHandle nh_ = *(ros::NodeHandle *)nh;
+    // ros::Publisher pub_ = nh_.advertise<std_msgs::String>("object_position", 1);
+    // tf::TransformListener listener;
+    // message_filters::Subscriber<geometry_msgs::Pose> tf_sub_;
+    // tf::MessageFilter<geometry_msgs::Pose> *tf_filter_;
+    // ros::Time rate(0);
+    // while (nh_.ok())
+    // {
+    //     if (Control.getObjectPosition(&pub_)) {cout << "Receive!\n";}
+    //     tf::StampedTransform transform;
+    //     try
+    //     {
+    //         listener.lookupTransform("LWrR_Link","base_link", rate, transform);
+    //     }
+    //     catch(const tf::TransformException& ex)
+    //     {
+    //         ROS_ERROR("%s", ex.what());
+    //         continue;
+    //     }
+    //     Control.tfCallBack(&transform);
+    // }
 }
 
 // joystick callback function
@@ -2077,12 +2092,14 @@ void JoyCallback(const std_msgs::Float64MultiArray::ConstPtr& joy_msgs)
 // run event loop
 int main(int argc, char** argv)
 {
+    // ios::sync_with_stdio(false); // for the purpose of enhancing I/O speed
+    // cin.tie(0); cout.tie(0); // for the purpose of enhancing I/O speed
     // initialize everything
     init();
     ros::init(argc, argv, "dual_arm_simulate");
     
-    char str[100] = "/home/kist/KIST-Dual-Arm-Operational-Space-Control-ROS/src/dual_arm/model/dualarm_hands_mod_sim.xml";
-    //char str[100] = "E:/libraries/mujoco200/model/dualarm.urdf";
+    char str[100] = "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/model/test.xml";
+    //char str[100] = "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/model/dualarm_hands_mod_sim.xml";
     
     memcpy(filename, str, sizeof(str));
     settings.loadrequest = 2;
@@ -2092,8 +2109,11 @@ int main(int argc, char** argv)
     
     // start simulation thread
     std::thread simthread(simulate);
-    pthread_t _pth_ros;
-    pthread_create(&_pth_ros, NULL, &ros_com, NULL);
+    // pthread_t pth_ros_;
+    // ros::NodeHandle nh_;
+    // int iret_ros_ = 0;
+    // pthread_mutex_init(&Control._mtx, 0);
+    // iret_ros_ = pthread_create(&pth_ros_, NULL, &ROSRoutine, (void *)&nh_);
 
     // event loop
     while( !glfwWindowShouldClose(window) && !settings.exitrequest )
@@ -2131,6 +2151,8 @@ int main(int argc, char** argv)
     // stop simulation thread
     settings.exitrequest = 1;
     simthread.join();
+    // pthread_join(iret_ros_, 0);
+    // pthread_mutex_destroy(&Control._mtx);
 
     // delete everything we allocated
     uiClearCallback(window);

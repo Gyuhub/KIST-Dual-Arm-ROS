@@ -14,8 +14,15 @@
 #include "custommath.h"
 #include "quadraticprogram.h"
 
+#include "motionplan.h"
+
 #include <ros/ros.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/String.h>
+#include <geometry_msgs/Pose.h>
+#include <tf/transform_listener.h>
+#include <tf/message_filter.h>
+#include <message_filters/subscriber.h>
 
 //#define DEG2RAD (0.01745329251994329576923690768489)
 //#define RAD2DEG 1.0/DEG2RAD
@@ -30,7 +37,7 @@ class CController
 public:
 	CController(int JDOF);
 	virtual ~CController();	
-	void read(double time, double* q, double* qdot, double* torque);
+	void read(double time, double* q, double* qdot, double* qddot);
 	//void write(double* qdes, double* qdotdes);
 	void write(double* torque);
 	_Float64 _joy_command[19];
@@ -41,6 +48,7 @@ public:
 	VectorXd _torque_a;//actuated torque
 	VectorXd _q; //joint angle vector
 	VectorXd _qdot; //joint velocity vector
+	VectorXd _qddot; //joint acceleration vector
 
 private:
 	double _t;
@@ -53,7 +61,7 @@ private:
 	VectorXd _zero_vec;	
 	VectorXd _q_home;
 
-	//VectorXd _q_limit; // TEST(!!!!!!!!!!!!!!!!!!!!!!!!!!)
+	VectorXd _q_task; // positioning hand
 
 	VectorXd _pre_q;
 	VectorXd _pre_qdot;
@@ -90,6 +98,7 @@ private:
 	void reset_target(double motion_time, VectorXd target_joint_position);
 	void reset_target(double motion_time, Vector3d target_pos_lh, Vector3d target_ori_lh, Vector3d target_pos_rh, Vector3d target_ori_rh);
 	void reset_target(double motion_time, Vector3d target_pos_lh, Vector3d target_ori_lh, Vector3d target_pos_rh, Vector3d target_ori_rh, string joy_button);
+	void reset_target(double motion_time, Vector3d target_pos_lh, Vector3d target_ori_lh, Vector3d target_pos_rh, Vector3d target_ori_rh, int num);
 	void motionPlan();
 	int _cnt_plan;
 	VectorXd _time_plan;
@@ -233,8 +242,8 @@ private:
 	Vector3d _q_err_left_hand;
 	Vector3d _q_err_right_hand;
 
-	Vector3d _w_left_hand; //angular velocity vector 3x1
-	Vector3d _w_right_hand; //angular velocity vector 3x1
+	Vector3d _w_left_hand; //angular velocity vector 3x1 (world frame angular velocity)
+	Vector3d _w_right_hand; //angular velocity vector 3x1 (world frame angular velocity)
 	Vector3d _pre_w_left_hand;
 	Vector3d _pre_w_right_hand;
 	Vector3d _pre_wdot_left_hand;
@@ -263,12 +272,63 @@ private:
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	// ROS
+	/////////////////////////////////////////////////////////////////////////////////////
+	// ROS //////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
 	VectorXd _joy_vec_command;
-
-	// File stream
-	ofstream _ofs_OSF, _ofs_HQP, _ofs_RHQP, _log_sim_torque, _log_com_torque, _log_sim_task;
+public:
+	void tfCallBack(const tf::StampedTransform *transform);
+	bool getObjectPosition(const ros::Publisher *pub);
+	bool _is_object_required;
+	std_msgs::String _object_name;
+	pthread_mutex_t _mtx;
+private:
+	/////////////////////////////////////////////////////////////////////////////////////
+	// File stream //////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
+	ofstream _ofs_OSF, _ofs_HQP, _ofs_RHQP, _log_sim_torque, _log_com_torque, _log_sim_task, _rot, _quat, _ori;
 	int _idx;
+
+	/////////////////////////////////////////////////////////////////////////////////////
+	// Motion Plan //////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
+	void trajectoryPlan();
+	// for offline planning
+	void resetMotionPlan(Eigen::Vector3d goal_pos_lh, Eigen::Vector3d goal_ori_lh, Eigen::Vector3d goal_pos_rh, Eigen::Vector3d goal_ori_rh,
+						Eigen::Vector3d start_pos_lh, Eigen::Vector3d start_ori_lh,Eigen::Vector3d start_pos_rh, Eigen::Vector3d start_ori_rh);
+	void orientationPlan(); // for orientation planning
+	Eigen::Vector3d _x_left_shoulder_to_hand, _x_right_shoulder_to_hand;
+	Eigen::Vector3d _x_des_left_orientation, _x_des_right_orientation;
+	int _size_motion_plan_left_hand; // for offline planning
+	int _size_motion_plan_right_hand; // for offline planning
+	bool _bool_motion_plan_finished; // for offline planning
+	bool _bool_motion_plan_read; // for offline planning
+	ofstream _motion_plan_left_hand; // for offline planning
+	ofstream _motion_plan_right_hand; // for offline planning
+	MjOmpl::CMotionPlan LeftHandMotionPlan;
+	MjOmpl::CMotionPlan RightHandMotionPlan;
+	Vector3d _min_task_position, _max_task_position;
+	VectorXd _low_task_bounds, _high_task_bounds;
+	Vector3d _pos_start_left_hand, _pos_start_right_hand; // for offline planning
+	Vector3d _rpy_start_left_hand, _rpy_start_right_hand; // for offline planning
+
+	/////////////////////////////////////////////////////////////////////////////////////
+	// Trajectory Plan //////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
+	int _cnt_traj_plan;
+	bool _bool_traj_finished;
+	std::size_t _state_count_left_hand, _state_count_right_hand; // Count the number of state in which the motion planning solved
+	MatrixXd _traj_pos_goal_left_hand, _traj_pos_goal_right_hand; // Store the position result of the motion planning
+	MatrixXd _traj_ori_goal_left_hand, _traj_ori_goal_right_hand; // Store the orientation result of the motion planning
+	Matrix3d _R_left_hand, _R_right_hand, _traj_R_left_hand, _traj_R_right_hand; // Rotation matrces. R : current rotation matrix, traj_R : trajectory rotation matrix
+	Vector3d _omega_left_hand, _omega_right_hand; // body-fixed frame angular velocity (frame of the end-effector)
+	VectorXd _x_traj_goal_left_hand, _x_traj_goal_right_hand; // Store the position & orientation results of the motion planning
+	VectorXd _xdot_traj_goal_left_hand, _xdot_traj_goal_right_hand; // Store the linear & angular velocities result of the motion planning
+	VectorXd _x_q_left_hand, _x_q_right_hand, _x_q_des_left_hand, _x_q_des_right_hand; // Contain the states of both hands. pos : x y z, ori : x y z w (quaternion)
+	VectorXd _x_q_dot_left_hand, _x_q_dot_right_hand, _x_q_dot_des_left_hand, _x_q_dot_des_right_hand; // Contain the states of both hands. linear vel : xdot ydot zdot, angular vel : omega_x omega_y omega_z (not quaternion, it is angular velocity that calculated at body-fixed frame)
+	VectorXi _bool_traj_plan;
+
+	VectorXd _traj_threshold;
 };
 
 #endif

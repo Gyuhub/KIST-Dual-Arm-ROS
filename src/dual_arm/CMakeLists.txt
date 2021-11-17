@@ -7,6 +7,8 @@ add_compile_options(-std=c++11 -O)
 find_package(catkin REQUIRED COMPONENTS
     roscpp
     std_msgs
+    geometry_msgs
+    tf
 )
 
 find_package(Eigen3 3.3 REQUIRED)
@@ -15,11 +17,16 @@ find_package(OpenGL REQUIRED)
 
 find_package(GLEW REQUIRED)
 
+if(NOT OMPL_INCLUDE_DIRS)
+	find_package(ompl REQUIRED)
+endif()
+
 set(SRC_FILES
     src/controller.cpp
     src/quadraticprogram.cpp
     src/robotmodel.cpp
     src/trajectory.cpp
+    src/motionplan.cpp
 )
 
 set(MUJOCO_PATH
@@ -36,7 +43,7 @@ message("Mujoco Path : " ${MUJOCO_PATH})
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES dual_arm
+#   LIBRARIES dual_arm
   CATKIN_DEPENDS roscpp std_msgs
 #  DEPENDS system_lib
 )
@@ -51,6 +58,7 @@ include_directories(
  #   ${CMAKE_CURRENT_SOURCE_DIR}/rbdl/include
     ${MUJOCO_PATH}/include
     /usr/local/include/qpOASES
+    ${OMPL_INCLUDE_DIRS}
 #    /usr/local/include/eigen3
 )
 
@@ -91,6 +99,7 @@ PUBLIC
     -lrbdl_urdfreader
     -lpthread
     -lqpOASES
+    ${OMPL_LIBRARIES}
     ${MUJOCO_PATH}/bin/libglew.so
     ${MUJOCO_PATH}/bin/libglfw.so.3
     #GL

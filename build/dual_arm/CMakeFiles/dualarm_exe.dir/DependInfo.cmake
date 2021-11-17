@@ -23,6 +23,7 @@ set(CMAKE_CXX_TARGET_INCLUDE_PATH
   "/usr/local/include/eigen3"
   "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/../../../mujoco200_linux/include"
   "/usr/local/include/qpOASES"
+  "/usr/local/include/ompl-1.5"
   )
 
 # Targets to which this target links.

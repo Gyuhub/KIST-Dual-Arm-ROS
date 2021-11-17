@@ -1,2 +1,2 @@
-dual_arm:joystick_drivers/joy:joystick_drivers/joystick_drivers:joystick_drivers/ps3joy:joystick_drivers/spacenav_node:joystick_drivers/wiimote
+dual_arm:tf_test
 -DCATKIN_DEVEL_PREFIX=/home/kist/KIST-Dual-Arm-ROS/devel -DCMAKE_INSTALL_PREFIX=/home/kist/KIST-Dual-Arm-ROS/install -G Unix Makefiles

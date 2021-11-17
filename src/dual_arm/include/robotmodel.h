@@ -19,7 +19,8 @@ public:
 	CModel();
 	virtual ~CModel();
 
-	void update_kinematics(VectorXd& q, VectorXd& qdot);
+	// void update_kinematics(VectorXd& q, VectorXd& qdot);
+	void update_kinematics(VectorXd& q, VectorXd& qdot, VectorXd& qddot); // To calculate the body-fixed angular velocity (end-effector)
 	void update_dynamics();
 	void calculate_EE_positions_orientations();
 	void calculate_EE_Jacobians();	
@@ -44,10 +45,9 @@ public:
 	 // Quaternion & orientation
 	Quaterniond _q_left_hand; //quaternion left hand
 	Quaterniond _q_right_hand; //quaternion right hand
-	Vector3d _q_vec_left_hand; //quaternion x,y,z vector 3x1
-	Vector3d _q_vec_right_hand; //quaternion x,y,z vector 3x1
-	Vector3d _w_left_hand; //angular velocity vector 3x1
-	Vector3d _w_right_hand; //angular velocity vector 3x1
+	Vector3d _q_vec_left_hand, _q_vec_right_hand; //quaternion x,y,z vector 3x1
+	Vector3d _w_left_hand, _w_right_hand; //angular velocity vector 3x1
+	Vector3d _omega_left_hand, _omega_right_hand; // angular velocity vector which is calculated at body-fixed frame (end-effector) 3x1
 	float _q_scalar_left_hand; //quaternion w scalar
 	float _q_scalar_right_hand; //quaternion w scalar
 
@@ -65,7 +65,7 @@ private:
 
 	int _id_left_hand, _id_right_hand, _id_left_shoulder, _id_right_shoulder;
 
-	VectorXd _q, _qdot;
+	VectorXd _q, _qdot, _qddot; // To calculate body-fixed angular velocity, we need the qddot (joint angle acceleration)
 	VectorXd _zero_vec_joint;
 
 	Vector3d _position_local_task_left_hand;

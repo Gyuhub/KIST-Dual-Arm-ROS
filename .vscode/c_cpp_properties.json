@@ -8,14 +8,13 @@
             "includePath": [
                 "/home/kist/KIST-Dual-Arm-ROS/devel/include/**",
                 "/opt/ros/melodic/include/**",
-                "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/include/**",
-                "/home/kist/KIST-Dual-Arm-ROS/src/joystick_drivers/wiimote/include/**",
+                "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/include",
                 "/usr/include/**",
                 "/usr/local/include/eigen3",
+                "/usr/local/include/ompl-1.5",
                 "${workspaceFolder}/src/dual_arm/include"
             ],
-            "name": "ROS",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+            "name": "ROS"
         }
     ],
     "version": 4

@@ -671,9 +671,9 @@ static Eigen::Quaterniond CalcVectorToQuaternion(Eigen::Vector3d Vec) //calculat
     Eigen::Quaterniond Q;
 	Q = AA;*/
     Eigen::Quaterniond Q;
-    Q = AngleAxisd(Vec(0), Eigen::Vector3d::UnitX())
+    Q = AngleAxisd(Vec(2), Eigen::Vector3d::UnitZ())
         * AngleAxisd(Vec(1), Eigen::Vector3d::UnitY())
-        * AngleAxisd(Vec(2), Eigen::Vector3d::UnitZ());
+        * AngleAxisd(Vec(0), Eigen::Vector3d::UnitX());
     return Q;
 }
 

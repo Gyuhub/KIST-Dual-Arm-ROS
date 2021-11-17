@@ -12,9 +12,14 @@ CController::~CController()
 	_log_sim_torque.close();
 	_log_com_torque.close();
 	_log_sim_task.close();
+	if(_motion_plan_left_hand.is_open()) _motion_plan_left_hand.close();
+	if(_motion_plan_right_hand.is_open()) _motion_plan_right_hand.close();
+	_rot.close();
+	_quat.close();
+	_ori.close();
 }
 
-void CController::read(double t, double* q, double* qdot, double* torque)
+void CController::read(double t, double* q, double* qdot, double* qddot)
 {	
 	_t = t;
 
@@ -33,14 +38,25 @@ void CController::read(double t, double* q, double* qdot, double* torque)
 		_q(i) = q[i];
 		//_qdot(i) = qdot[i]; //from simulator
 		_qdot(i) = CustomMath::VelLowpassFilter(_dt, 2.0*PI* 10.0, _pre_q(i), _q(i), _pre_qdot(i)); //low-pass filter
+		_qddot(i) = qddot[i];
 		
 		_pre_q(i) = _q(i);
 		_pre_qdot(i) = _qdot(i);
 		//NOTE: log the simulation joint torque and desired joint torque datas for plot
-		_log_sim_torque << to_string(torque[i]) << "\t";
+		_log_sim_torque << to_string(qddot[i]) << "\t";
 	}
 	_log_sim_torque << endl;
-	_log_sim_task << _x_left_hand(0) << "\t" << _x_left_hand(1) << "\t" << _x_left_hand(2) << "\t" << _x_des_left_hand(0) << "\t" << _x_des_left_hand(1) << "\t" << _x_des_left_hand(2) << "\t" << _x_right_hand(0) << "\t" << _x_right_hand(1) << "\t" << _x_right_hand(2) << "\t" << _x_des_right_hand(0) << "\t" << _x_des_right_hand(1) << "\t" << _x_des_right_hand(2) << "\n";
+	// _log_sim_task << _x_left_hand(0) << "\t" << _x_left_hand(1) << "\t" << _x_left_hand(2) << "\t" << _x_des_left_hand(0) << "\t" << _x_des_left_hand(1) << "\t" << _x_des_left_hand(2) << "\t" << _x_right_hand(0) << "\t" << _x_right_hand(1) << "\t" << _x_right_hand(2) << "\t" << _x_des_right_hand(0) << "\t" << _x_des_right_hand(1) << "\t" << _x_des_right_hand(2) << "\n";
+	if (_control_mode != 1)
+	{
+		_log_sim_task << _x_left_hand(0) << "\t" << _x_left_hand(1) << "\t" << _x_left_hand(2) << "\t" 
+					<< _x_traj_goal_left_hand(0) << "\t" << _x_traj_goal_left_hand(1) << "\t" << _x_traj_goal_left_hand(2) << "\t"
+					<< _x_q_des_left_hand(0) << '\t' << _x_q_des_left_hand(1) << '\t' << _x_q_des_left_hand(2) << '\t'
+					<< _x_right_hand(0) << "\t" << _x_right_hand(1) << "\t" << _x_right_hand(2) << "\t"
+					<< _x_traj_goal_right_hand(0) << "\t" << _x_traj_goal_right_hand(1) << "\t" << _x_traj_goal_right_hand(2) << "\t"
+					<< _x_q_des_right_hand(0) << '\t' << _x_q_des_right_hand(1) << '\t' << _x_q_des_right_hand(2) << "\t"
+					<< _t << "\n";
+	}
 }
 
 void CController::write(double* torque)
@@ -63,6 +79,7 @@ void CController::reset_target(double motion_time, VectorXd target_joint_positio
 
 	_q_goal = target_joint_position.head(15);
 	_qdot_goal.setZero();
+	_bool_traj_plan.setZero();
 }
 
 void CController::reset_target(double motion_time, Vector3d target_pos_lh, Vector3d target_ori_lh, Vector3d target_pos_rh, Vector3d target_ori_rh)
@@ -79,8 +96,10 @@ void CController::reset_target(double motion_time, Vector3d target_pos_lh, Vecto
 	_x_goal_right_hand.tail(3) = target_ori_rh;
 	_xdot_goal_right_hand.setZero();
 	// cout << "-----------------------------" << endl;
-	// cout << "left hands target orientation " << endl << _x_goal_left_hand.tail(3) * RAD2DEG << endl;
-	// cout << "right hands target orientation " << endl << _x_goal_right_hand.tail(3) * RAD2DEG << endl;
+	// cout << "current ori lh " << _x_left_hand.tail(3).transpose() * RAD2DEG << endl;
+	// cout << "current ori rh " << _x_right_hand.tail(3).transpose() * RAD2DEG << endl;
+	// cout << "desired ori lh " << _x_goal_left_hand.tail(3).transpose() * RAD2DEG << endl;
+	// cout << "desired ori rh " << _x_goal_right_hand.tail(3).transpose() * RAD2DEG << endl;
 	_q_goal_left_hand = CustomMath::CalcVectorToQuaternion(target_ori_lh);
 	_q_goal_right_hand = CustomMath::CalcVectorToQuaternion(target_ori_rh);
 }
@@ -97,6 +116,61 @@ void CController::reset_target(double motion_time, Vector3d target_pos_lh, Vecto
 	_x_goal_right_hand.head(3) = target_pos_rh;
 	_x_goal_right_hand.tail(3) = target_ori_rh;
 	_xdot_goal_right_hand.setZero();
+}
+
+void CController::resetMotionPlan(Eigen::Vector3d goal_pos_lh, Eigen::Vector3d goal_ori_lh, Eigen::Vector3d goal_pos_rh, Eigen::Vector3d goal_ori_rh,
+								Eigen::Vector3d start_pos_lh, Eigen::Vector3d start_ori_lh,Eigen::Vector3d start_pos_rh, Eigen::Vector3d start_ori_rh)
+{
+	cout << "//////////  motion plan " << _cnt_plan  << " start.  //////////\n" << endl;
+	_control_mode = 4;
+
+	_xdot_goal_left_hand.setZero();
+	_xdot_goal_right_hand.setZero();
+	cout << "\n-----------------------------" << endl;
+	cout << "start pos lh " << start_pos_lh.transpose() << endl;
+	cout << "start pos rh " << start_pos_rh.transpose() << endl;
+	cout << "goal pos lh " << goal_pos_lh.transpose() << endl;
+	cout << "goal pos rh " << goal_pos_rh.transpose() << endl;
+	cout << "-----------------------------" << endl;
+	cout << "start ori lh " << start_ori_lh.transpose() << endl;
+	cout << "start ori rh " << start_ori_rh.transpose() << endl;
+	cout << "goal ori lh " << goal_ori_lh.transpose() << endl;
+	cout << "goal ori rh " << goal_ori_rh.transpose() << endl;
+	cout << "-----------------------------\n" << endl;
+	Eigen::Quaterniond q_start_left_hand, q_start_right_hand, q_goal_left_hand, q_goal_right_hand;
+	q_start_left_hand = AngleAxisd(start_ori_lh(0), Vector3d::UnitX()) * AngleAxisd(start_ori_lh(1), Vector3d::UnitY()) * AngleAxisd(start_ori_lh(2), Vector3d::UnitZ());
+	q_start_right_hand = AngleAxisd(start_ori_rh(0), Vector3d::UnitX()) * AngleAxisd(start_ori_rh(1), Vector3d::UnitY()) * AngleAxisd(start_ori_rh(2), Vector3d::UnitZ());
+	q_goal_left_hand = AngleAxisd(goal_ori_lh(0), Vector3d::UnitX()) * AngleAxisd(goal_ori_lh(1), Vector3d::UnitY()) * AngleAxisd(goal_ori_lh(2), Vector3d::UnitZ());
+	q_goal_right_hand = AngleAxisd(goal_ori_rh(0), Vector3d::UnitX()) * AngleAxisd(goal_ori_rh(1), Vector3d::UnitY()) * AngleAxisd(goal_ori_rh(2), Vector3d::UnitZ());
+	LeftHandMotionPlan.setStartState(start_pos_lh, q_start_left_hand);
+	LeftHandMotionPlan.setGoalState(goal_pos_lh, q_goal_left_hand);
+	LeftHandMotionPlan.constructProblemDefinition();
+	LeftHandMotionPlan.solve();
+	_state_count_left_hand = LeftHandMotionPlan.getStateCount();
+	_traj_pos_goal_left_hand.resize(3, _state_count_left_hand);
+	_traj_ori_goal_left_hand.resize(4, _state_count_left_hand);
+	_traj_pos_goal_left_hand = LeftHandMotionPlan.getResultPosMatrix();
+	_traj_ori_goal_left_hand = LeftHandMotionPlan.getResultOriMatrix();
+	for (int i = 0; i < _state_count_left_hand; i++) _motion_plan_left_hand << _traj_pos_goal_left_hand.col(i)(0) << '\t' << _traj_pos_goal_left_hand.col(i)(1) << '\t' << _traj_pos_goal_left_hand.col(i)(2) << '\t' << _traj_ori_goal_left_hand.col(i)(0) << '\t' << _traj_ori_goal_left_hand.col(i)(1) << '\t' << _traj_ori_goal_left_hand.col(i)(2) << '\t' << _traj_ori_goal_left_hand.col(i)(3) << '\n'; // for offline motion planning
+	_size_motion_plan_left_hand += _state_count_left_hand; // for offline motion planning
+
+	RightHandMotionPlan.setStartState(start_pos_rh, q_start_right_hand);
+	RightHandMotionPlan.setGoalState(goal_pos_rh, q_goal_right_hand);
+	RightHandMotionPlan.constructProblemDefinition();
+	RightHandMotionPlan.solve();
+	_state_count_right_hand = RightHandMotionPlan.getStateCount();
+	_traj_pos_goal_right_hand.resize(3, _state_count_right_hand);
+	_traj_ori_goal_right_hand.resize(4, _state_count_right_hand);
+	_traj_pos_goal_right_hand = RightHandMotionPlan.getResultPosMatrix();
+	_traj_ori_goal_right_hand = RightHandMotionPlan.getResultOriMatrix();
+	for (int i = 0; i < _state_count_right_hand; i++) _motion_plan_right_hand << _traj_pos_goal_right_hand.col(i)(0) << '\t' << _traj_pos_goal_right_hand.col(i)(1) << '\t' << _traj_pos_goal_right_hand.col(i)(2) << '\t' << _traj_ori_goal_right_hand.col(i)(0) << '\t' << _traj_ori_goal_right_hand.col(i)(1) << '\t' << _traj_ori_goal_right_hand.col(i)(2) << '\t' << _traj_ori_goal_right_hand.col(i)(3) << '\n'; // for offline motion planning
+	_size_motion_plan_right_hand += _state_count_right_hand; // for offline motion planning
+	_cnt_plan = _cnt_plan + 1; // for offline motion planning
+	_bool_plan(_cnt_plan) = 1; // for offline motion planning
+	_pos_start_left_hand = goal_pos_lh;
+	_rpy_start_left_hand = goal_ori_lh;
+	_pos_start_right_hand = goal_pos_rh;
+	_rpy_start_right_hand = goal_ori_rh;
 }
 
 void CController::joystickSub(_Float64 joy_command[])
@@ -174,431 +248,749 @@ void CController::joystickSub(_Float64 joy_command[])
 	// _UD_stick_right = joy_command[4] * 0.5;
 }
 
+// void CController::motionPlan()
+// {
+// 	_time_plan(1) = 5.0; //move task position
+// 	_time_plan(2) = 5.0; //taks space motion 1
+// 	_time_plan(3) = 5.0; //task space motion 2
+// 	_time_plan(4) = 5.0; //task space motion 3
+// 	_time_plan(5) = 5.0; //move to another task position
+// 	_time_plan(6) = 5.0; //task space motion 4
+// 	_time_plan(7) = 5.0; //task space motion 5
+// 	_time_plan(8) = 1000000.0; // move home position
+//	
+//
+// 	// Motion plan holding object
+// 	if (_bool_plan(_cnt_plan) == 1)
+// 	{
+// 		_cnt_plan = _cnt_plan + 1;
+// 		cout << "//////////  motion plan " << _cnt_plan  << " start.  //////////\n" << endl;
+// 		if (_cnt_plan == 1)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0) + 0.1;
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.1;
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 		 	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD; // _x_left_hand(3);//0.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(1) = -90.0 * DEG2RAD; // _x_left_hand(4);//-90.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(2) = 0.0 * DEG2RAD; // _x_left_hand(5);//0.0 * DEG2RAD;
+//	
+// 			_pos_goal_right_hand(0) = _x_right_hand(0) + 0.1;
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.1;
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 		 	_rpy_goal_right_hand(0) = 180.0 * DEG2RAD;//0.0 * DEG2RAD;//_x_right_hand(3);
+// 			_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;//-90.0 * DEG2RAD;//_x_right_hand(4);
+// 			_rpy_goal_right_hand(2) = 0.0 * DEG2RAD;//180.0 * DEG2RAD;//_x_right_hand(5);//90.0 * DEG2RAD;
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 2)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1);
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.1;
+// 		 	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 			_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 			_rpy_goal_left_hand(2) = _x_left_hand(5);
+//	
+// 			_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1);
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.1;
+// 		 	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 			_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 			_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 3)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1) + 0.1;
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
+//	
+// 			_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1) - 0.1;
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 4)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1);
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2) - 0.1;
+// 		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
+//	
+// 			_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1);
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2) - 0.1;
+// 		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 5)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.1;
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
+//	
+// 			_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.1;
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 6)
+// 		{
+// 			_pos_goal_left_hand(0) = _x_left_hand(0) + 0.05;
+// 		 	_pos_goal_left_hand(1) = _x_left_hand(1) + 0.05;
+// 		 	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
+// 		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
+//
+// 			_pos_goal_right_hand(0) = _x_right_hand(0) + 0.05;
+// 		 	_pos_goal_right_hand(1) = _x_right_hand(1) - 0.05;
+// 		 	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
+// 		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
+// 			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
+// 			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		}
+// 		if (_cnt_plan == 7)
+// 		{
+// 			reset_target(_time_plan(_cnt_plan), _q_home);
+// 		}
+// 		if (_cnt_plan == 8)
+// 		{
+// 			reset_target(_time_plan(_cnt_plan), _q);
+//		
+// 		}
+//
+// 		// if (_cnt_plan == 1) //move task position
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = 0.7;
+// 		//  	_pos_goal_left_hand(1) = 0.2 + 0.075;
+// 		//  	_pos_goal_left_hand(2) = 0.52;
+// 		//  	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
+// 		// 	_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
+// 		// 	_rpy_goal_left_hand(2) = 0.0 * DEG2RAD;
+// 		//
+// 		// 	_pos_goal_right_hand(0) = 0.7;
+// 		//  	_pos_goal_right_hand(1) = 0.2 - 0.075;
+// 		//  	_pos_goal_right_hand(2) = 0.52;
+// 		//  	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
+// 		// 	_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
+// 		// 	_rpy_goal_right_hand(2) = 180.0 * DEG2RAD;
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. move task position" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 2) //task space motion 1
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		//  	_pos_goal_left_hand(1) = _x_left_hand(1);
+// 		//  	_pos_goal_left_hand(2) = _x_left_hand(2) - 0.05;
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		//  	_pos_goal_right_hand(1) = _x_right_hand(1);
+// 		//  	_pos_goal_right_hand(2) = _x_right_hand(2) - 0.05;
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 1" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 3) //task space motion 2
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = 0.7;
+// 		//  	_pos_goal_left_hand(1) = 0.24;
+// 		//  	_pos_goal_left_hand(2) = 0.47;
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = 0.7;
+// 		//  	_pos_goal_right_hand(1) = 0.16;
+// 		//  	_pos_goal_right_hand(2) = 0.47;
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 2" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 4) //task space motion 3
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = 0.7;
+// 		//  	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.01;
+// 		//  	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = 0.7;
+// 		//  	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.01;
+// 		//  	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		//
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 3" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 5) //move to another task position
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = 0.7;
+// 		//  	_pos_goal_left_hand(1) = -0.2 + 0.05 - 0.03;
+// 		//  	_pos_goal_left_hand(2) = 0.52;
+// 		//  	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
+// 		// 	_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
+// 		// 	_rpy_goal_left_hand(2) = 0.0 * DEG2RAD;
+// 		//
+// 		// 	_pos_goal_right_hand(0) = 0.7;
+// 		//  	_pos_goal_right_hand(1) = -0.2 - 0.05 + 0.03;
+// 		//  	_pos_goal_right_hand(2) = 0.52;
+// 		//  	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
+// 		// 	_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
+// 		// 	_rpy_goal_right_hand(2) = 180.0 * DEG2RAD;
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. move to another task position" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 6) //task space motion 4
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		//  	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.01;
+// 		//  	_pos_goal_left_hand(2) = 0.47;
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		//  	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.01;
+// 		//  	_pos_goal_right_hand(2) = 0.47;
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 4" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 7) // task space motion 5
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
+// 		//  	_pos_goal_left_hand(1) = -0.2 + 0.05 + 0.1;
+// 		//  	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
+// 		//  	_pos_goal_right_hand(1) = -0.2 - 0.05 - 0.1;
+// 		//  	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 5" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 8) // task space motion 6
+// 		// {
+// 		// 	_pos_goal_left_hand(0) = _x_left_hand(0) - 0.1;
+// 		//  	_pos_goal_left_hand(1) = _x_left_hand(1);
+// 		//  	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
+// 		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 		//
+// 		// 	_pos_goal_right_hand(0) = _x_right_hand(0) - 0.1;
+// 		//  	_pos_goal_right_hand(1) = _x_right_hand(1);
+// 		//  	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
+// 		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 6" << endl;
+// 		// }
+// 		// else if (_cnt_plan == 9) // move home position
+// 		// {
+// 		// 	reset_target(_time_plan(_cnt_plan), _q_home);
+// 		// 	cout << "motion plan " << _cnt_plan  << " start. move home position" << endl;
+// 		// }
+// 	}
+//
+// 	// Joystick Axis stick control plan
+// 	// if (_bool_plan(_cnt_plan) == 1)
+// 	// {
+// 	// 	if (_LR_stick_left == 0 & _UD_stick_left == 0 & _LR_stick_right == 0 & _UD_stick_right == 0) //move task position
+// 	// 	{
+// 	// 		reset_target(3.0, _q_home);
+// 	// 	}
+// 	// 	else
+// 	// 	{
+// 	// 		_pos_goal_left_hand(0) = _x_left_hand(0) + _UD_stick_left;
+// 	// 	 	_pos_goal_left_hand(1) = _x_left_hand(1) + _LR_stick_left;
+// 	// 	 	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 	// 	 	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 	// 		_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 	// 		_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 	//
+// 	// 		_pos_goal_right_hand(0) = _x_right_hand(0) + _UD_stick_right;
+// 	// 	 	_pos_goal_right_hand(1) = _x_right_hand(1) + _LR_stick_right;
+// 	// 	 	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 	// 	 	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 	// 		_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 	// 		_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 	// 		reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+// 	// 		cout << "joystick motion start. move task position" << endl;
+// 	// 	}
+// 	// }
+//
+// 	// Joystick Button control plan
+// 	// if(_bool_joy_button_push == true)
+// 	// {
+// 	// 	if (_joy_button == "Start")
+// 	// 	{
+// 	// 		_cnt_joy_mode = _cnt_joy_mode + 1;
+// 	// 		switch (_cnt_joy_mode)
+// 	// 		{
+// 	// 		case 1:
+// 	// 			cout << "Control mode [2] --Operational Space Control--" << endl;
+// 	// 			_control_mode = 2;
+// 	// 			break;
+// 	// 		case 2:
+// 	// 			cout << "Control mode [3] --HQP Task Space Control--" << endl;
+// 	// 			_control_mode = 3;
+// 	// 			break;
+// 	// 		case 3:
+// 	// 			cout << "Control mode [4] --Reduced HQP Task Space Control--" << endl;
+// 	// 			_control_mode = 4;
+// 	// 			break;
+// 	// 		case 4:
+// 	// 			cout << "Control mode [5] --Operational Space Control Without Body Link--" << endl;
+// 	// 			_control_mode = 5;
+// 	// 			break;
+// 	// 		case 5:
+// 	// 			cout << "Control mode init ..." << endl;
+// 	// 			_cnt_joy_mode = 0;
+// 	// 			break;
+// 	// 		}
+// 	// 		_pos_goal_left_hand(0) = _x_left_hand(0);
+// 	// 	 	_pos_goal_left_hand(1) = _x_left_hand(1);
+// 	// 	 	_pos_goal_left_hand(2) = _x_left_hand(2);
+// 	// 	 	_rpy_goal_left_hand(0) = _x_left_hand(3);
+// 	// 	 	_rpy_goal_left_hand(1) = _x_left_hand(4);
+// 	// 	 	_rpy_goal_left_hand(2) = _x_left_hand(5);
+// 	//
+// 	// 		_pos_goal_right_hand(0) = _x_right_hand(0);
+// 	// 	 	_pos_goal_right_hand(1) = _x_right_hand(1);
+// 	// 	 	_pos_goal_right_hand(2) = _x_right_hand(2);
+// 	// 	 	_rpy_goal_right_hand(0) = _x_right_hand(3);
+// 	// 	 	_rpy_goal_right_hand(1) = _x_right_hand(4);
+// 	// 	 	_rpy_goal_right_hand(2) = _x_right_hand(5);
+// 	// 		reset_target(1000.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
+// 	// 		_bool_joy_button_push = false;
+// 	// 	}
+// 	// 	else if (_joy_button == "NA")
+// 	// 	{
+// 	// 		/* code */
+// 	// 	}
+// 	// 	else if (_bool_joy_plan(_cnt_plan) == 1)
+// 	// 	{
+// 	// 		if (_control_mode == 1)
+// 	// 		{
+// 	// 			_control_mode = 5;
+// 	// 		}
+// 	//		
+// 	// 		_cnt_plan = _cnt_plan + 1;
+// 	//
+// 	// 		_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
+// 	// 		_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
+// 	// 		_rpy_goal_left_hand(2) = 90.0 * DEG2RAD;
+// 	//
+// 	// 		_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
+// 	// 		_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
+// 	// 		_rpy_goal_right_hand(2) = 90.0 * DEG2RAD;
+// 	//
+// 	// 		if (_joy_button == "A")
+// 	// 		{
+// 	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
+// 	// 			_pos_goal_left_hand(0) = 0.7 - 0.2;
+// 	// 			_pos_goal_left_hand(1) = 0.075;
+// 	// 			_pos_goal_left_hand(2) = 0.52;
+// 	//
+// 	// 			_pos_goal_right_hand(0) = 0.7 - 0.2;
+// 	// 			_pos_goal_right_hand(1) = -0.075;
+// 	// 			_pos_goal_right_hand(2) = 0.52;
+// 	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
+// 	// 		}
+// 	// 		else if (_joy_button == "B")
+// 	// 		{
+// 	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
+// 	// 			_pos_goal_left_hand(0) = 0.7;
+// 	// 			_pos_goal_left_hand(1) = -0.2 + 0.075;
+// 	// 			_pos_goal_left_hand(2) = 0.52;
+// 	//
+// 	// 			_pos_goal_right_hand(0) = 0.7;
+// 	// 			_pos_goal_right_hand(1) = -0.2 - 0.075;
+// 	// 			_pos_goal_right_hand(2) = 0.52;
+// 	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
+// 	// 		}
+// 	// 		else if (_joy_button == "X")
+// 	// 		{
+// 	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
+// 	// 			_pos_goal_left_hand(0) = 0.7;
+// 	// 			_pos_goal_left_hand(1) = 0.2 + 0.075;
+// 	// 			_pos_goal_left_hand(2) = 0.52;
+// 	//
+// 	// 			_pos_goal_right_hand(0) = 0.7;
+// 	// 			_pos_goal_right_hand(1) = 0.2 - 0.075;
+// 	// 			_pos_goal_right_hand(2) = 0.52;
+// 	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
+// 	// 		}
+// 	// 		else if (_joy_button == "Y")
+// 	// 		{
+// 	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
+// 	// 			_pos_goal_left_hand(0) = 0.7 + 0.1;
+// 	// 			_pos_goal_left_hand(1) = 0.075;
+// 	// 			_pos_goal_left_hand(2) = 0.52;
+// 	//
+// 	// 			_pos_goal_right_hand(0) = 0.7 + 0.1;
+// 	// 			_pos_goal_right_hand(1) = -0.075;
+// 	// 			_pos_goal_right_hand(2) = 0.52;
+// 	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
+// 	// 		}
+// 	// 	}
+// 	// }
+// }
+
+// Offline Motion plan
 void CController::motionPlan()
 {
-	_time_plan(1) = 5.0; //move task position
-	_time_plan(2) = 5.0; //taks space motion 1
-	_time_plan(3) = 5.0; //task space motion 2
-	_time_plan(4) = 5.0; //task space motion 3
-	_time_plan(5) = 5.0; //move to another task position
-	_time_plan(6) = 5.0; //task space motion 4
-	_time_plan(7) = 5.0; //task space motion 5
-	_time_plan(8) = 1000000.0; // move home position
-	
+	_time_plan(1) = 3.0; //move task position
+	_time_plan(2) = 1.0; //taks space motion 1
+	_time_plan(3) = 1.0; //task space motion 2
+	_time_plan(4) = 1.0; //task space motion 3
 
 	// Motion plan holding object
-	if (_bool_plan(_cnt_plan) == 1)
+	if (_bool_plan(_cnt_plan) == 1 && _bool_motion_plan_finished == false)
 	{
+		//cout << "motion Plan!! Trajectory boolean plan : " << _bool_traj_plan.transpose() << endl;
 		_cnt_plan = _cnt_plan + 1;
-		cout << "//////////  motion plan " << _cnt_plan  << " start.  //////////\n" << endl;
 		if (_cnt_plan == 1)
 		{
-			_pos_goal_left_hand(0) = _x_left_hand(0) + 0.1;
-		 	_pos_goal_left_hand(1) = _x_left_hand(1);
-		 	_pos_goal_left_hand(2) = _x_left_hand(2);
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//180.0 * DEG2RAD;
-			_rpy_goal_left_hand(1) = _x_left_hand(4);//
-			_rpy_goal_left_hand(2) = _x_left_hand(5);//-90.0 * DEG2RAD;
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0) + 0.1;
-		 	_pos_goal_right_hand(1) = _x_right_hand(1);
-		 	_pos_goal_right_hand(2) = _x_right_hand(2);
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);
-			_rpy_goal_right_hand(1) = _x_right_hand(4);
-			_rpy_goal_right_hand(2) = _x_right_hand(5);//90.0 * DEG2RAD;
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+			_pos_start_left_hand = _x_left_hand.head(3);
+			_rpy_start_left_hand = _q_left_hand.toRotationMatrix().eulerAngles(0, 1, 2);
+			_pos_start_right_hand = _x_right_hand.head(3);
+			_rpy_start_right_hand = _q_right_hand.toRotationMatrix().eulerAngles(0, 1, 2);
+			_pos_goal_left_hand(0) = 0.57; //_x_left_hand(0) + 0.1;
+		 	_pos_goal_left_hand(1) = 0.3; //_x_left_hand(1) - 0.1;
+		 	_pos_goal_left_hand(2) = 0.56; //_x_left_hand(2);
+		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//90.0 * DEG2RAD;
+			_rpy_goal_left_hand(1) = _x_left_hand(4);//-90.0 * DEG2RAD;
+			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
+
+			_pos_goal_right_hand(0) = 0.57; //_x_right_hand(0) + 0.1;
+		 	_pos_goal_right_hand(1) = -0.3; //_x_right_hand(1) + 0.1;
+		 	_pos_goal_right_hand(2) = 0.56; //_x_right_hand(2);
+		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//90.0 * DEG2RAD;
+			_rpy_goal_right_hand(1) = _x_right_hand(4);//-90.0 * DEG2RAD;
+			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
+			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
+							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
 		}
 		if (_cnt_plan == 2)
 		{
-			_pos_goal_left_hand(0) = _x_left_hand(0);
-		 	_pos_goal_left_hand(1) = _x_left_hand(1);
-		 	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.1;
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);
-			_rpy_goal_left_hand(1) = _x_left_hand(4);
-			_rpy_goal_left_hand(2) = _x_left_hand(5);
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0);
-		 	_pos_goal_right_hand(1) = _x_right_hand(1);
-		 	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.1;
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);
-			_rpy_goal_right_hand(1) = _x_right_hand(4);
-			_rpy_goal_right_hand(2) = _x_right_hand(5);
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+			_pos_goal_right_hand(0) = 0.67;
+		 	_pos_goal_right_hand(1) = -0.1;
+		 	_pos_goal_right_hand(2) = 0.616;
+		 	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD; //_x_right_hand(3);
+			_rpy_goal_right_hand(1) = 0.0 * DEG2RAD; //_x_right_hand(4);
+			_rpy_goal_right_hand(2) = 90.0 * DEG2RAD; //_x_right_hand(5);
+			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
+							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
 		}
 		if (_cnt_plan == 3)
 		{
-			_pos_goal_left_hand(0) = _x_left_hand(0);
-		 	_pos_goal_left_hand(1) = _x_left_hand(1) + 0.1;
-		 	_pos_goal_left_hand(2) = _x_left_hand(2);
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
-			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0);
-		 	_pos_goal_right_hand(1) = _x_right_hand(1) - 0.1;
-		 	_pos_goal_right_hand(2) = _x_right_hand(2);
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
-			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
+			_pos_goal_left_hand(0) = 0.67;
+		 	_pos_goal_left_hand(1) = 0.1;
+		 	_pos_goal_left_hand(2) = 0.616;
+		 	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD; //_x_right_hand(3);
+			_rpy_goal_left_hand(1) = -90.0 * DEG2RAD; //_x_right_hand(4);
+			_rpy_goal_left_hand(2) = 0.0 * DEG2RAD; //_x_right_hand(5);
+			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
+							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
 		}
-		if (_cnt_plan == 4)
-		{
-			_pos_goal_left_hand(0) = _x_left_hand(0);
-		 	_pos_goal_left_hand(1) = _x_left_hand(1);
-		 	_pos_goal_left_hand(2) = _x_left_hand(2) - 0.1;
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
-			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0);
-		 	_pos_goal_right_hand(1) = _x_right_hand(1);
-		 	_pos_goal_right_hand(2) = _x_right_hand(2) - 0.1;
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
-			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		}
-		if (_cnt_plan == 5)
-		{
-			_pos_goal_left_hand(0) = _x_left_hand(0);
-		 	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.1;
-		 	_pos_goal_left_hand(2) = _x_left_hand(2);
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
-			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0);
-		 	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.1;
-		 	_pos_goal_right_hand(2) = _x_right_hand(2);
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
-			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		}
-		if (_cnt_plan == 6)
-		{
-			_pos_goal_left_hand(0) = _x_left_hand(0) + 0.05;
-		 	_pos_goal_left_hand(1) = _x_left_hand(1) + 0.05;
-		 	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
-		 	_rpy_goal_left_hand(0) = _x_left_hand(3);//0.0 * DEG2RAD;
-			_rpy_goal_left_hand(1) = _x_left_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_left_hand(2) = _x_left_hand(5);//0.0 * DEG2RAD;
-	
-			_pos_goal_right_hand(0) = _x_right_hand(0) + 0.05;
-		 	_pos_goal_right_hand(1) = _x_right_hand(1) - 0.05;
-		 	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
-		 	_rpy_goal_right_hand(0) = _x_right_hand(3);//180.0 * DEG2RAD;
-			_rpy_goal_right_hand(1) = _x_right_hand(4);//40.0 * DEG2RAD;
-			_rpy_goal_right_hand(2) = _x_right_hand(5);//0.0 * DEG2RAD;
-			reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		}
-		if (_cnt_plan == 7)
-		{
-			reset_target(_time_plan(_cnt_plan), _q_home);
-		}
-		if (_cnt_plan == 8)
-		{
-			reset_target(_time_plan(_cnt_plan), _q);
-			
-		}
-
-		// if (_cnt_plan == 1) //move task position
-		// {
-		// 	_pos_goal_left_hand(0) = 0.7;
-		//  	_pos_goal_left_hand(1) = 0.2 + 0.075;
-		//  	_pos_goal_left_hand(2) = 0.52;
-		//  	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
-		// 	_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
-		// 	_rpy_goal_left_hand(2) = 0.0 * DEG2RAD;
-		//
-		// 	_pos_goal_right_hand(0) = 0.7;
-		//  	_pos_goal_right_hand(1) = 0.2 - 0.075;
-		//  	_pos_goal_right_hand(2) = 0.52;
-		//  	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
-		// 	_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
-		// 	_rpy_goal_right_hand(2) = 180.0 * DEG2RAD;
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. move task position" << endl;
-		// }
-		// else if (_cnt_plan == 2) //task space motion 1
-		// {
-		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
-		//  	_pos_goal_left_hand(1) = _x_left_hand(1);
-		//  	_pos_goal_left_hand(2) = _x_left_hand(2) - 0.05;
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
-		//  	_pos_goal_right_hand(1) = _x_right_hand(1);
-		//  	_pos_goal_right_hand(2) = _x_right_hand(2) - 0.05;
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 1" << endl;
-		// }
-		// else if (_cnt_plan == 3) //task space motion 2
-		// {
-		// 	_pos_goal_left_hand(0) = 0.7;
-		//  	_pos_goal_left_hand(1) = 0.24;
-		//  	_pos_goal_left_hand(2) = 0.47;
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = 0.7;
-		//  	_pos_goal_right_hand(1) = 0.16;
-		//  	_pos_goal_right_hand(2) = 0.47;
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 2" << endl;
-		// }
-		// else if (_cnt_plan == 4) //task space motion 3
-		// {
-		// 	_pos_goal_left_hand(0) = 0.7;
-		//  	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.01;
-		//  	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = 0.7;
-		//  	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.01;
-		//  	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		//
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 3" << endl;
-		// }
-		// else if (_cnt_plan == 5) //move to another task position
-		// {
-		// 	_pos_goal_left_hand(0) = 0.7;
-		//  	_pos_goal_left_hand(1) = -0.2 + 0.05 - 0.03;
-		//  	_pos_goal_left_hand(2) = 0.52;
-		//  	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
-		// 	_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
-		// 	_rpy_goal_left_hand(2) = 0.0 * DEG2RAD;
-		//
-		// 	_pos_goal_right_hand(0) = 0.7;
-		//  	_pos_goal_right_hand(1) = -0.2 - 0.05 + 0.03;
-		//  	_pos_goal_right_hand(2) = 0.52;
-		//  	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
-		// 	_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
-		// 	_rpy_goal_right_hand(2) = 180.0 * DEG2RAD;
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. move to another task position" << endl;
-		// }
-		// else if (_cnt_plan == 6) //task space motion 4
-		// {
-		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
-		//  	_pos_goal_left_hand(1) = _x_left_hand(1) - 0.01;
-		//  	_pos_goal_left_hand(2) = 0.47;
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
-		//  	_pos_goal_right_hand(1) = _x_right_hand(1) + 0.01;
-		//  	_pos_goal_right_hand(2) = 0.47;
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 4" << endl;
-		// }
-		// else if (_cnt_plan == 7) // task space motion 5
-		// {
-		// 	_pos_goal_left_hand(0) = _x_left_hand(0);
-		//  	_pos_goal_left_hand(1) = -0.2 + 0.05 + 0.1;
-		//  	_pos_goal_left_hand(2) = _x_left_hand(2);
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = _x_right_hand(0);
-		//  	_pos_goal_right_hand(1) = -0.2 - 0.05 - 0.1;
-		//  	_pos_goal_right_hand(2) = _x_right_hand(2);
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 5" << endl;
-		// }
-		// else if (_cnt_plan == 8) // task space motion 6
-		// {
-		// 	_pos_goal_left_hand(0) = _x_left_hand(0) - 0.1;
-		//  	_pos_goal_left_hand(1) = _x_left_hand(1);
-		//  	_pos_goal_left_hand(2) = _x_left_hand(2) + 0.05;
-		//  	_rpy_goal_left_hand(0) = _x_left_hand(3);
-		//  	_rpy_goal_left_hand(1) = _x_left_hand(4);
-		//  	_rpy_goal_left_hand(2) = _x_left_hand(5);
-		//
-		// 	_pos_goal_right_hand(0) = _x_right_hand(0) - 0.1;
-		//  	_pos_goal_right_hand(1) = _x_right_hand(1);
-		//  	_pos_goal_right_hand(2) = _x_right_hand(2) + 0.05;
-		//  	_rpy_goal_right_hand(0) = _x_right_hand(3);
-		//  	_rpy_goal_right_hand(1) = _x_right_hand(4);
-		//  	_rpy_goal_right_hand(2) = _x_right_hand(5);
-		// 	reset_target(_time_plan(_cnt_plan), _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-		// 	cout << "motion plan " << _cnt_plan  << " start. task space motion 6" << endl;
-		// }
-		// else if (_cnt_plan == 9) // move home position
-		// {
-		// 	reset_target(_time_plan(_cnt_plan), _q_home);
-		// 	cout << "motion plan " << _cnt_plan  << " start. move home position" << endl;
-		// }
+		_bool_motion_plan_finished = true;
 	}
-
-	// Joystick Axis stick control plan
-	// if (_bool_plan(_cnt_plan) == 1)
-	// {
-	// 	if (_LR_stick_left == 0 & _UD_stick_left == 0 & _LR_stick_right == 0 & _UD_stick_right == 0) //move task position
-	// 	{
-	// 		reset_target(3.0, _q_home);
-	// 	}
-	// 	else
-	// 	{
-	// 		_pos_goal_left_hand(0) = _x_left_hand(0) + _UD_stick_left;
-	// 	 	_pos_goal_left_hand(1) = _x_left_hand(1) + _LR_stick_left;
-	// 	 	_pos_goal_left_hand(2) = _x_left_hand(2);
-	// 	 	_rpy_goal_left_hand(0) = _x_left_hand(3);
-	// 		_rpy_goal_left_hand(1) = _x_left_hand(4);
-	// 		_rpy_goal_left_hand(2) = _x_left_hand(5);
-	//
-	// 		_pos_goal_right_hand(0) = _x_right_hand(0) + _UD_stick_right;
-	// 	 	_pos_goal_right_hand(1) = _x_right_hand(1) + _LR_stick_right;
-	// 	 	_pos_goal_right_hand(2) = _x_right_hand(2);
-	// 	 	_rpy_goal_right_hand(0) = _x_right_hand(3);
-	// 		_rpy_goal_right_hand(1) = _x_right_hand(4);
-	// 		_rpy_goal_right_hand(2) = _x_right_hand(5);
-	// 		reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand);
-	// 		cout << "joystick motion start. move task position" << endl;
-	// 	}
-	// }
-	
-	// Joystick Button control plan
-	// if(_bool_joy_button_push == true)
-	// {
-	// 	if (_joy_button == "Start")
-	// 	{
-	// 		_cnt_joy_mode = _cnt_joy_mode + 1;
-	// 		switch (_cnt_joy_mode)
-	// 		{
-	// 		case 1:
-	// 			cout << "Control mode [2] --Operational Space Control--" << endl;
-	// 			_control_mode = 2;
-	// 			break;
-	// 		case 2:
-	// 			cout << "Control mode [3] --HQP Task Space Control--" << endl;
-	// 			_control_mode = 3;
-	// 			break;
-	// 		case 3:
-	// 			cout << "Control mode [4] --Reduced HQP Task Space Control--" << endl;
-	// 			_control_mode = 4;
-	// 			break;
-	// 		case 4:
-	// 			cout << "Control mode [5] --Operational Space Control Without Body Link--" << endl;
-	// 			_control_mode = 5;
-	// 			break;
-	// 		case 5:
-	// 			cout << "Control mode init ..." << endl;
-	// 			_cnt_joy_mode = 0;
-	// 			break;
-	// 		}
-	// 		_pos_goal_left_hand(0) = _x_left_hand(0);
-	// 	 	_pos_goal_left_hand(1) = _x_left_hand(1);
-	// 	 	_pos_goal_left_hand(2) = _x_left_hand(2);
-	// 	 	_rpy_goal_left_hand(0) = _x_left_hand(3);
-	// 	 	_rpy_goal_left_hand(1) = _x_left_hand(4);
-	// 	 	_rpy_goal_left_hand(2) = _x_left_hand(5);
-	//
-	// 		_pos_goal_right_hand(0) = _x_right_hand(0);
-	// 	 	_pos_goal_right_hand(1) = _x_right_hand(1);
-	// 	 	_pos_goal_right_hand(2) = _x_right_hand(2);
-	// 	 	_rpy_goal_right_hand(0) = _x_right_hand(3);
-	// 	 	_rpy_goal_right_hand(1) = _x_right_hand(4);
-	// 	 	_rpy_goal_right_hand(2) = _x_right_hand(5);
-	// 		reset_target(1000.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
-	// 		_bool_joy_button_push = false;
-	// 	}
-	// 	else if (_joy_button == "NA")
-	// 	{
-	// 		/* code */
-	// 	}
-	// 	else if (_bool_joy_plan(_cnt_plan) == 1)
-	// 	{
-	// 		if (_control_mode == 1)
-	// 		{
-	// 			_control_mode = 5;
-	// 		}
-	//		
-	// 		_cnt_plan = _cnt_plan + 1;
-	//
-	// 		_rpy_goal_left_hand(0) = 0.0 * DEG2RAD;
-	// 		_rpy_goal_left_hand(1) = -90.0 * DEG2RAD;
-	// 		_rpy_goal_left_hand(2) = 90.0 * DEG2RAD;
-	//
-	// 		_rpy_goal_right_hand(0) = 0.0 * DEG2RAD;
-	// 		_rpy_goal_right_hand(1) = -90.0 * DEG2RAD;
-	// 		_rpy_goal_right_hand(2) = 90.0 * DEG2RAD;
-	//
-	// 		if (_joy_button == "A")
-	// 		{
-	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
-	// 			_pos_goal_left_hand(0) = 0.7 - 0.2;
-	// 			_pos_goal_left_hand(1) = 0.075;
-	// 			_pos_goal_left_hand(2) = 0.52;
-	//
-	// 			_pos_goal_right_hand(0) = 0.7 - 0.2;
-	// 			_pos_goal_right_hand(1) = -0.075;
-	// 			_pos_goal_right_hand(2) = 0.52;
-	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
-	// 		}
-	// 		else if (_joy_button == "B")
-	// 		{
-	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
-	// 			_pos_goal_left_hand(0) = 0.7;
-	// 			_pos_goal_left_hand(1) = -0.2 + 0.075;
-	// 			_pos_goal_left_hand(2) = 0.52;
-	//
-	// 			_pos_goal_right_hand(0) = 0.7;
-	// 			_pos_goal_right_hand(1) = -0.2 - 0.075;
-	// 			_pos_goal_right_hand(2) = 0.52;
-	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
-	// 		}
-	// 		else if (_joy_button == "X")
-	// 		{
-	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
-	// 			_pos_goal_left_hand(0) = 0.7;
-	// 			_pos_goal_left_hand(1) = 0.2 + 0.075;
-	// 			_pos_goal_left_hand(2) = 0.52;
-	//
-	// 			_pos_goal_right_hand(0) = 0.7;
-	// 			_pos_goal_right_hand(1) = 0.2 - 0.075;
-	// 			_pos_goal_right_hand(2) = 0.52;
-	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
-	// 		}
-	// 		else if (_joy_button == "Y")
-	// 		{
-	// 			cout << "Joystick button [" << _joy_button << "] motion plan" << endl;
-	// 			_pos_goal_left_hand(0) = 0.7 + 0.1;
-	// 			_pos_goal_left_hand(1) = 0.075;
-	// 			_pos_goal_left_hand(2) = 0.52;
-	//
-	// 			_pos_goal_right_hand(0) = 0.7 + 0.1;
-	// 			_pos_goal_right_hand(1) = -0.075;
-	// 			_pos_goal_right_hand(2) = 0.52;
-	// 			reset_target(3.0, _pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand, _joy_button);
-	// 		}
-	// 	}
-	// }
 }
+
+// Offline Motion plan and trajectory plan
+void CController::trajectoryPlan()
+{
+	if(_bool_motion_plan_finished == true && _bool_motion_plan_read == false)
+	{
+		if(_motion_plan_left_hand.is_open() == true)
+		{
+			_motion_plan_left_hand.close();
+			ifstream read_motion_plan_left_hand;
+			read_motion_plan_left_hand.open("/home/kist/Octave/Dual-arm/Log/motion_plan_left_hand.txt");
+			if (read_motion_plan_left_hand.is_open() == true)
+			{
+				cout << "reading motion plan left hand...\n";
+				_traj_pos_goal_left_hand.resize(3, _size_motion_plan_left_hand);
+				_traj_ori_goal_left_hand.resize(4, _size_motion_plan_left_hand);
+				int col = 0;
+				while (!read_motion_plan_left_hand.eof())
+				{
+					int row = 0;
+					string str, sub_str;
+					getline(read_motion_plan_left_hand, str);
+					istringstream ss(str);
+					while (getline(ss, sub_str, '\t'))
+					{
+						if (row >= 3) _traj_ori_goal_left_hand.col(col)((row++)-3) = std::stod(sub_str);
+						else _traj_pos_goal_left_hand.col(col)(row++) = std::stod(sub_str);
+					}
+					col++;
+				}
+				read_motion_plan_left_hand.close();
+				cout << "reading motion plan left hand finished!\n";
+				cout << "***Trajectory Pos goal matrix left hand***\n" << _traj_pos_goal_left_hand << '\n';
+				cout << "***Trajectory Ori goal matrix left hand***\n" << _traj_ori_goal_left_hand << '\n';
+				LeftHandTrajectory.getInitialRotationMatrix(_R_left_hand);
+				LeftHandTrajectory.getRotationMatrices(_traj_ori_goal_left_hand, _size_motion_plan_left_hand);
+				LeftHandTrajectory.preProcessing(_size_motion_plan_left_hand);
+				LeftHandTrajectory.initialization();
+				LeftHandTrajectory.iterate(_size_motion_plan_left_hand);
+			}
+		}
+		if(_motion_plan_right_hand.is_open() == true)
+		{
+			_motion_plan_right_hand.close();
+			ifstream read_motion_plan_right_hand;
+			read_motion_plan_right_hand.open("/home/kist/Octave/Dual-arm/Log/motion_plan_right_hand.txt");
+			if (read_motion_plan_right_hand.is_open() == true)
+			{
+				cout << "reading motion plan right hand...\n";
+				_traj_pos_goal_right_hand.resize(3, _size_motion_plan_right_hand);
+				_traj_ori_goal_right_hand.resize(4, _size_motion_plan_right_hand);
+				int col = 0;
+				while (!read_motion_plan_right_hand.eof())
+				{
+					int row = 0;
+					string str, sub_str;
+					getline(read_motion_plan_right_hand, str);
+					istringstream ss(str);
+					while (getline(ss, sub_str, '\t'))
+					{
+						if (row >= 3) _traj_ori_goal_right_hand.col(col)((row++)-3) = std::stod(sub_str);
+						else _traj_pos_goal_right_hand.col(col)(row++) = std::stod(sub_str);
+					}
+					col++;
+				}
+				read_motion_plan_right_hand.close();
+				cout << "reading motion plan right hand finished!\n";
+				cout << "***Trajectory Pos goal matrix right hand***\n" << _traj_pos_goal_right_hand << '\n';
+				cout << "***Trajectory Ori goal matrix right hand***\n" << _traj_ori_goal_right_hand << '\n';
+				RightHandTrajectory.getInitialRotationMatrix(_R_right_hand);
+				RightHandTrajectory.getRotationMatrices(_traj_ori_goal_right_hand, _size_motion_plan_right_hand);
+				RightHandTrajectory.preProcessing(_size_motion_plan_right_hand);
+				RightHandTrajectory.initialization();
+				RightHandTrajectory.iterate(_size_motion_plan_right_hand);
+			}
+
+		}
+		_bool_motion_plan_read = true;
+	}
+	if(_bool_traj_plan(_cnt_traj_plan) == 1)
+	{
+		cout << "//////////  trajetory plan " << _cnt_traj_plan  << " start.  //////////\n" << endl << endl;
+		if (_cnt_traj_plan < _size_motion_plan_left_hand)
+		{
+			_x_traj_goal_left_hand.head(3) = _traj_pos_goal_left_hand.block<3, 1>(0, _cnt_traj_plan);
+			_x_traj_goal_left_hand.tail(4) = _traj_ori_goal_left_hand.block<4, 1>(0, _cnt_traj_plan);
+			cout << " ( Trajectory Goal left hand ) : " << _x_traj_goal_left_hand.transpose() << '\n';
+			//_xdot_traj_goal_left_hand.setZero();
+		}
+		if (_cnt_traj_plan < _size_motion_plan_right_hand)
+		{
+			_x_traj_goal_right_hand.head(3) = _traj_pos_goal_right_hand.block<3, 1>(0, _cnt_traj_plan);
+			_x_traj_goal_right_hand.tail(4) = _traj_ori_goal_right_hand.block<4, 1>(0, _cnt_traj_plan);
+			cout << " ( Trajectory Goal right hand ) : " << _x_traj_goal_right_hand.transpose() << '\n';
+			//_xdot_traj_goal_right_hand.setZero();
+		}
+		_cnt_traj_plan++;	
+	}
+}
+
+void CController::orientationPlan()
+{
+	_x_left_shoulder_to_hand = -Model._x_left_shoulder + _x_left_hand.head(3);
+	_x_right_shoulder_to_hand = -Model._x_right_shoulder + _x_right_hand.head(3);
+	_x_des_left_orientation(0) = 0.0 * DEG2RAD;
+	_x_des_left_orientation(1) = 0.0;
+	_x_des_left_orientation(2) = std::atan2(_x_left_shoulder_to_hand(1), _x_left_shoulder_to_hand(0)) + 90.0 * DEG2RAD;
+	_x_des_right_orientation(0) = 0.0 * DEG2RAD;
+	_x_des_right_orientation(1) = 0.0;
+	_x_des_right_orientation(2) = std::atan2(_x_right_shoulder_to_hand(1), _x_right_shoulder_to_hand(0)) + 90.0 * DEG2RAD;
+}
+
+// void CController::control_mujoco(_Float64 _joy_command[])
+// {	
+// 	ModelUpdate();
+// 	// Joystick node that subscribes /joy_command
+// 	// joystickSub(_joy_command);
+// 	motionPlan();
+// 	//Control
+// 	if (_control_mode == 1) //joint space control
+// 	{
+// 		if (_t - _init_t < 0.1 && _bool_joint_motion == false)
+// 		{
+// 			_start_time = _init_t;
+// 			_end_time = _start_time + _motion_time;
+// 			JointTrajectory.reset_initial(_start_time, _q, _qdot);
+// 			JointTrajectory.update_goal(_q_goal, _qdot_goal, _end_time);
+// 			_bool_joint_motion = true;
+// 		}
+// 		JointTrajectory.update_time(_t);
+// 		_q_des = JointTrajectory.position_cubicSpline();
+// 		_qdot_des = JointTrajectory.velocity_cubicSpline();
+// 		JointControl();
+// 		if (JointTrajectory.check_trajectory_complete() == 1)
+// 		{
+// 			_bool_plan(_cnt_plan) = 1;
+// 			_bool_joy_plan(_cnt_plan) = 1;
+// 			_bool_init = true;
+// 			_bool_joy_button_push = false;
+// 		}
+// 	}
+// 	else if (_control_mode == 2 || _control_mode == 3 || _control_mode == 4 || _control_mode == 5) //task space hand control
+// 	{
+// 		if (_t - _init_t < 0.1 && _bool_ee_motion == false)
+// 		{
+// 			_start_time = _init_t;
+// 			_end_time = _start_time + _motion_time;
+// 			LeftHandTrajectory.reset_initial(_start_time, _x_left_hand, _xdot_left_hand);
+// 			LeftHandTrajectory.update_goal(_x_goal_left_hand, _xdot_goal_left_hand, _end_time);
+// 			LeftHandTrajectory.reset_initial(_start_time, _q_left_hand, Model._R_left_hand, _w_left_hand , _wdot_left_hand); // Quaternion
+// 			//LeftHandTrajectory.reset_initial(_start_time, _q_left_hand, CustomMath::CalcQuaternionToMatrix(_q_left_hand),_w_left_hand ,_wdot_left_hand); // Quaternion
+// 			LeftHandTrajectory.update_goal(_q_goal_left_hand, CustomMath::GetBodyRotationMatrix(_x_goal_left_hand.tail(3)), _end_time);
+//
+// 			RightHandTrajectory.reset_initial(_start_time, _x_right_hand, _xdot_right_hand);
+// 			RightHandTrajectory.update_goal(_x_goal_right_hand, _xdot_goal_right_hand, _end_time);
+// 			RightHandTrajectory.reset_initial(_start_time, _q_right_hand, Model._R_right_hand, _w_right_hand , _wdot_right_hand);
+// 			//RightHandTrajectory.reset_initial(_start_time, _q_right_hand, CustomMath::CalcQuaternionToMatrix(_q_right_hand),_w_right_hand ,_wdot_right_hand); // Quaternion CustomMath::GetBodyRotationMatrix(_x_right_hand(3), _x_right_hand(4), _x_right_hand(5))
+// 			RightHandTrajectory.update_goal(_q_goal_right_hand, CustomMath::GetBodyRotationMatrix(_x_goal_right_hand.tail(3)), _end_time);
+//
+// 			_bool_ee_motion = true;
+// 		}
+// 		LeftHandTrajectory.update_time(_t);
+// 		_x_des_left_hand = LeftHandTrajectory.position_cubicSpline();		
+// 		_xdot_des_left_hand = LeftHandTrajectory.velocity_cubicSpline();
+// 		_q_des_left_hand = LeftHandTrajectory.quaternion_SQUAD();
+// 		// For quaternion cubic spline interpolation
+// 		// _q_des_left_hand = LeftHandTrajectory.quaternion_angular_orientation_cubicSpline();
+// 		// _w_des_left_hand = LeftHandTrajectory.quaternion_angular_velocity_cubicSpline(_dt);
+//
+// 		RightHandTrajectory.update_time(_t);		
+// 		_x_des_right_hand = RightHandTrajectory.position_cubicSpline();		
+// 		_xdot_des_right_hand = RightHandTrajectory.velocity_cubicSpline();
+// 		_q_des_right_hand = RightHandTrajectory.quaternion_SQUAD();
+// 		// _q_des_right_hand = RightHandTrajectory.quaternion_angular_orientation_cubicSpline();
+// 		// _w_des_right_hand = RightHandTrajectory.quaternion_angular_velocity_cubicSpline(_dt);
+//
+//
+// 		if (_control_mode == 2)
+// 		{
+// 			chrono::system_clock::time_point start = chrono::system_clock::now();
+//
+// 			OperationalSpaceControl();
+//
+// 			chrono::system_clock::time_point end = chrono::system_clock::now();
+// 			chrono::nanoseconds nano = end - start;
+// 			//printf("%f \n", nano / 1000.0);//millisec
+// 		}
+// 		else if (_control_mode == 3)
+// 		{
+// 			chrono::system_clock::time_point start = chrono::system_clock::now();
+//
+// 			HQPTaskSpaceControl();
+//
+// 			chrono::system_clock::time_point end = chrono::system_clock::now();
+// 			chrono::nanoseconds nano = end - start;
+// 			//printf("%f \n", nano / 1000.0);//millisec
+// 			// _ofs_HQP << to_string(nano.count() / 1000.0) << endl;
+// 			// if (++_idx == 10000)
+// 			// {
+// 			// 	cout << "Dataset of " << _idx << " numbers is collected!! Close file..." << endl;
+// 			// 	_ofs_HQP.close();
+// 			// }
+// 		}
+// 		else if (_control_mode == 4)
+// 		{
+// 			chrono::system_clock::time_point start = chrono::system_clock::now();
+//
+// 			ReducedHQPTaskSpaceControl();
+//
+// 			chrono::system_clock::time_point end = chrono::system_clock::now();
+// 			chrono::nanoseconds nano = end - start;
+// 			//printf("%f \n", nano/1000.0);//millisec
+// 			// _ofs_RHQP << to_string(nano.count() / 1000.0) << endl;
+// 			// if (++_idx == 10000)
+// 			// {
+// 			// 	cout << "Dataset of " << _idx << " numbers is collected!! Close file..." << endl;
+// 			// 	_ofs_RHQP.close();
+// 			// }
+// 		}
+// 		else if (_control_mode == 5)
+// 		{
+// 			chrono::system_clock::time_point start = chrono::system_clock::now();
+//
+// 			OperationalSpaceControlWithoutBodyLink();
+//
+// 			chrono::system_clock::time_point end = chrono::system_clock::now();
+// 			chrono::nanoseconds nano = end - start;
+// 			// //printf("%f \n", nano / 1000.0);//millisec
+// 			// _ofs_OSF << to_string(nano.count() / 1000.0) << endl;
+// 			// if (++_idx == 10000)
+// 			// {
+// 			// 	cout << "Dataset of " << _idx << " numbers is collected!! Close file..." << endl;
+// 			// 	_ofs_OSF.close();
+// 			// }
+// 		}
+//
+// 		if (LeftHandTrajectory.check_trajectory_complete() == 1 || RightHandTrajectory.check_trajectory_complete() == 1)
+// 		{
+// 			//cout << "end motion cnt plan" << _cnt_plan << endl; 
+// 			_bool_plan(_cnt_plan) = 1;
+// 			_bool_joy_plan(_cnt_plan) = 1;
+// 			_bool_joy_button_push = false;
+// 			_bool_init = true;
+// 			// for repeating task !!!!!!!!!!!!!!!!!!!!!!!!!
+// 			// if(_cnt_plan == 5)
+// 			// {
+// 			// 	_bool_plan.setZero(20);
+// 			// 	_cnt_plan = 0;
+// 			// 	reset_target(_time_plan(_cnt_plan), _q_home);
+// 			// 	cout << "cnt plan initialize!!" << endl;
+// 			// }
+// 		}
+// 	}
+//
+// 	safeModeReplaceTorque(_bool_safemode);
+//
+// }
 
 void CController::control_mujoco(_Float64 _joy_command[])
 {	
@@ -606,10 +998,12 @@ void CController::control_mujoco(_Float64 _joy_command[])
 	// Joystick node that subscribes /joy_command
 	// joystickSub(_joy_command);
 	motionPlan();
+	trajectoryPlan();
+	//orientationPlan();
 	//Control
 	if (_control_mode == 1) //joint space control
 	{
-		if (_t - _init_t < 0.1 && _bool_joint_motion == false)
+		if (_bool_joint_motion == false) // _t - _init_t < 0.1 && _bool_joint_motion == false
 		{
 			_start_time = _init_t;
 			_end_time = _start_time + _motion_time;
@@ -627,42 +1021,59 @@ void CController::control_mujoco(_Float64 _joy_command[])
 			_bool_joy_plan(_cnt_plan) = 1;
 			_bool_init = true;
 			_bool_joy_button_push = false;
+			_bool_traj_plan(_cnt_traj_plan) = 1;
 		}
 	}
 	else if (_control_mode == 2 || _control_mode == 3 || _control_mode == 4 || _control_mode == 5) //task space hand control
 	{
-		if (_t - _init_t < 0.1 && _bool_ee_motion == false)
-		{ 
+		if (_t - _init_t < 0.1 && _bool_ee_motion == false) // _bool_ee_motion == false
+		{
 			_start_time = _init_t;
-			_end_time = _start_time + _motion_time;
-			LeftHandTrajectory.reset_initial(_start_time, _x_left_hand, _xdot_left_hand);
-			LeftHandTrajectory.update_goal(_x_goal_left_hand, _xdot_goal_left_hand, _end_time);
-			LeftHandTrajectory.reset_initial(_start_time, _q_left_hand, Model._R_left_hand, _w_left_hand , _wdot_left_hand); // Quaternion
-			//LeftHandTrajectory.reset_initial(_start_time, _q_left_hand, CustomMath::CalcQuaternionToMatrix(_q_left_hand),_w_left_hand ,_wdot_left_hand); // Quaternion
-			LeftHandTrajectory.update_goal(_q_goal_left_hand, CustomMath::GetBodyRotationMatrix(_x_goal_left_hand.tail(3)), _end_time);
+			_end_time = _start_time + 1.0; // for offline planning
+			cout << "\nstart time = [" << _start_time  << "], end time = [" << _end_time << "]\n";
+			// Make velocity to become zero when they rec trajectory goal
+			if (_bool_traj_finished == true) {
+				_xdot_traj_goal_left_hand.setZero();
+				_xdot_traj_goal_right_hand.setZero();
+				_bool_traj_finished = false;
+			}
+			else {
+				_xdot_traj_goal_left_hand = _xdot_left_hand;
+				_xdot_traj_goal_right_hand = _xdot_right_hand;
+			}
+			
+			// _xdot_traj_goal_left_hand = _xdot_left_hand;
+			// _xdot_traj_goal_right_hand = _xdot_right_hand;
 
-			RightHandTrajectory.reset_initial(_start_time, _x_right_hand, _xdot_right_hand);
-			RightHandTrajectory.update_goal(_x_goal_right_hand, _xdot_goal_right_hand, _end_time);
-			RightHandTrajectory.reset_initial(_start_time, _q_right_hand, Model._R_right_hand, _w_right_hand , _wdot_right_hand);
-			//RightHandTrajectory.reset_initial(_start_time, _q_right_hand, CustomMath::CalcQuaternionToMatrix(_q_right_hand),_w_right_hand ,_wdot_right_hand); // Quaternion CustomMath::GetBodyRotationMatrix(_x_right_hand(3), _x_right_hand(4), _x_right_hand(5))
-			RightHandTrajectory.update_goal(_q_goal_right_hand, CustomMath::GetBodyRotationMatrix(_x_goal_right_hand.tail(3)), _end_time);
+			LeftHandTrajectory.reset_initial(_start_time, _x_q_left_hand, _x_q_dot_left_hand);
+			LeftHandTrajectory.update_goal(_x_traj_goal_left_hand, _xdot_traj_goal_left_hand, _end_time);
+
+			RightHandTrajectory.reset_initial(_start_time, _x_q_right_hand, _x_q_dot_right_hand);
+			RightHandTrajectory.update_goal(_x_traj_goal_right_hand, _xdot_traj_goal_right_hand, _end_time);
 
 			_bool_ee_motion = true;
 		}
-		LeftHandTrajectory.update_time(_t);
-		_x_des_left_hand = LeftHandTrajectory.position_cubicSpline();		
-		_xdot_des_left_hand = LeftHandTrajectory.velocity_cubicSpline();
-		_q_des_left_hand = LeftHandTrajectory.quaternion_SQUAD();
-		// For quaternion cubic spline interpolation
-		// _q_des_left_hand = LeftHandTrajectory.quaternion_angular_orientation_cubicSpline();
-		// _w_des_left_hand = LeftHandTrajectory.quaternion_angular_velocity_cubicSpline(_dt);
 
-		RightHandTrajectory.update_time(_t);		
-		_x_des_right_hand = RightHandTrajectory.position_cubicSpline();		
-		_xdot_des_right_hand = RightHandTrajectory.velocity_cubicSpline();
-		_q_des_right_hand = RightHandTrajectory.quaternion_SQUAD();
-		// _q_des_right_hand = RightHandTrajectory.quaternion_angular_orientation_cubicSpline();
-		// _w_des_right_hand = RightHandTrajectory.quaternion_angular_velocity_cubicSpline(_dt);
+		/**
+		 * TODO: _x_q_des_left_hand.tail(4) = LeftHandTrajectory.orientationCubicSpline();
+		 * _x_q_dot_des_left_hand.tail(4) = LeftHandTrajectory.orientationVelocityCubicSpline();
+		 * _x_q_des_right_hand.tail(4) = RightHandTrajectory.orientationCubicSpline();
+		 * _x_q_dot_des_right_hand.tail(4) = RightHandTrajectory.orientationVelocityCubicSpline();
+		 */
+
+		LeftHandTrajectory.update_time(_t);
+		_x_q_des_left_hand.head(3) = LeftHandTrajectory.positionCubicSpline(); 
+		_x_q_dot_des_left_hand.head(3) = LeftHandTrajectory.velocityCubicSpline();
+		_x_q_des_left_hand.tail(4) = LeftHandTrajectory.orientationCubicSpline().coeffs();
+		_x_q_dot_des_left_hand.tail(3) = LeftHandTrajectory.orientationVelocityCubicSpline(_omega_left_hand);
+		Matrix3d mat = LeftHandTrajectory.orientationCubicSpline().toRotationMatrix();
+		_rot << _t << ' ' << mat(0, 0) << ' ' << mat(1, 0) << ' ' << mat(2, 0) << ' ' << mat(0, 1) << ' ' << mat(1, 1) << ' ' << mat(2, 1) << ' ' << mat(0, 2) << ' ' << mat(1, 2) << ' ' << mat(2, 2) << '\n';
+
+		RightHandTrajectory.update_time(_t);
+		_x_q_des_right_hand.head(3) = RightHandTrajectory.positionCubicSpline();
+		_x_q_dot_des_right_hand.head(3) = RightHandTrajectory.velocityCubicSpline();
+		_x_q_des_right_hand.tail(4) = RightHandTrajectory.orientationCubicSpline().coeffs();
+		_x_q_dot_des_right_hand.tail(3) = RightHandTrajectory.orientationVelocityCubicSpline(_omega_right_hand);
 
 		if (_control_mode == 2)
 		{
@@ -725,11 +1136,39 @@ void CController::control_mujoco(_Float64 _joy_command[])
 
 		if (LeftHandTrajectory.check_trajectory_complete() == 1 || RightHandTrajectory.check_trajectory_complete() == 1)
 		{
-			//cout << "end motion cnt plan" << _cnt_plan << endl; 
-			_bool_plan(_cnt_plan) = 1;
-			_bool_joy_plan(_cnt_plan) = 1;
-			_bool_joy_button_push = false;
+			cout << "Currnet trajectory plan count: " << _cnt_traj_plan << endl;
+			// _bool_joy_plan(_cnt_plan) = 1; // for joystick
+			// _bool_joy_button_push = false;  // for joystick
 			_bool_init = true;
+			_bool_ee_motion = false;
+			_bool_traj_plan(_cnt_traj_plan) = 1;
+			
+			// for Offline planning
+			if (_cnt_traj_plan >= _size_motion_plan_left_hand && _cnt_traj_plan >= _size_motion_plan_right_hand)
+			{
+				_cnt_traj_plan = 0;
+				_bool_traj_plan.setZero();
+				_bool_traj_plan(0) = 1;
+				cout << "////////// Trajectory & Motion planning End! //////////" << "\n";
+				cout << "////////// Joint Control: move home //////////\n";
+				reset_target(100000000.0, _q_home);
+			}
+			_bool_traj_finished = true;
+			cout << "////////// Trajectory reached to goal of motion plan! //////////" << '\n';
+			LeftHandTrajectory.increaseStep();
+			RightHandTrajectory.increaseStep();
+			// cout << "\nleft norm : " << (_x_left_hand - _traj_goal_left_hand.block<6, 1>(0, _state_count_left_hand - 1)).cwiseAbs().norm() << endl;
+			// cout << "\nright norm : " << (_x_right_hand - _traj_goal_right_hand.block<6, 1>(0, _state_count_right_hand - 1)).cwiseAbs().norm() << endl;
+			// cout << "\nthreshold norm : " << _traj_threshold.norm() << endl;
+			// if (((_x_left_hand - _traj_goal_left_hand.block<6, 1>(0, _state_count_left_hand - 1)).cwiseAbs().norm() < _traj_threshold.norm()) &&
+			//     ((_x_right_hand - _traj_goal_right_hand.block<6, 1>(0, _state_count_right_hand - 1)).cwiseAbs().norm() < _traj_threshold.norm()))
+			// 	{
+			// 		_cnt_traj_plan = 0;
+			// 	_bool_traj_plan.setZero();
+			// 	_bool_traj_plan(0) = 1;
+			// 	cout << "Reset Bool Trajectory Plan!! Bool Trajectory plan : " << _bool_traj_plan.transpose() << endl;
+			// 	_bool_plan(_cnt_plan) = 1;
+			// 	}
 			
 			// for repeating task !!!!!!!!!!!!!!!!!!!!!!!!!
 			// if(_cnt_plan == 5)
@@ -748,7 +1187,7 @@ void CController::control_mujoco(_Float64 _joy_command[])
 
 void CController::ModelUpdate()
 {
-	Model.update_kinematics(_q, _qdot);
+	Model.update_kinematics(_q, _qdot, _qddot);
 	Model.update_dynamics();
 	Model.calculate_EE_Jacobians();
 	Model.calculate_EE_positions_orientations();
@@ -781,15 +1220,18 @@ void CController::ModelUpdate()
 	_Jdot_qdot = _Jdot_hands * _qdot;
 
 	_x_left_hand.head(3) = Model._x_left_hand;
-	_x_left_hand.tail(3) = CustomMath::GetBodyRotationAngle(Model._R_left_hand);
+	_x_left_hand.tail(3) = Model._R_left_hand.eulerAngles(0, 1, 2); //CustomMath::GetBodyRotationAngle(Model._R_left_hand);
 	_x_right_hand.head(3) = Model._x_right_hand;
-	_x_right_hand.tail(3) = CustomMath::GetBodyRotationAngle(Model._R_right_hand);
+	_x_right_hand.tail(3) = Model._R_right_hand.eulerAngles(0, 1, 2); //CustomMath::GetBodyRotationAngle(Model._R_right_hand);
+
 	_xdot_left_hand = Model._xdot_left_hand;
 	_xdot_right_hand = Model._xdot_right_hand;
 
 	// Quaternion
 	_q_left_hand = Model._q_left_hand;
 	_q_right_hand = Model._q_right_hand;
+	_R_left_hand = _q_left_hand.normalized().toRotationMatrix();
+	_R_right_hand = _q_right_hand.normalized().toRotationMatrix();
 
 	_qdot_left_hand.w() = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_left_hand.w(), _q_left_hand.w(), _pre_qdot_left_hand.w());
 	_qdot_right_hand.w() = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_right_hand.w(), _q_right_hand.w(), _pre_qdot_right_hand.w());
@@ -801,13 +1243,13 @@ void CController::ModelUpdate()
 
 	for (int i = 0; i < 3; i++)
 	{
-		_qdot_left_hand.vec().coeffRef(i) = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_left_hand.vec().coeffRef(i), _q_left_hand.vec().coeffRef(i), _pre_qdot_left_hand.vec().coeffRef(i));
-		_qdot_right_hand.vec().coeffRef(i) = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_right_hand.vec().coeffRef(i), _q_right_hand.vec().coeffRef(i), _pre_qdot_right_hand.vec().coeffRef(i));
+		_qdot_left_hand.vec()(i) = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_left_hand.vec()(i), _q_left_hand.vec()(i), _pre_qdot_left_hand.vec()(i));
+		_qdot_right_hand.vec()(i) = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_q_right_hand.vec()(i), _q_right_hand.vec()(i), _pre_qdot_right_hand.vec()(i));
 	
-		_pre_q_left_hand.vec().coeffRef(i) = _q_left_hand.vec().coeffRef(i);
-		_pre_q_right_hand.vec().coeffRef(i) = _q_right_hand.vec().coeffRef(i);
-		_pre_qdot_left_hand.vec().coeffRef(i) = _qdot_left_hand.vec().coeffRef(i);
-		_pre_qdot_right_hand.vec().coeffRef(i) = _qdot_right_hand.vec().coeffRef(i);
+		_pre_q_left_hand.vec()(i) = _q_left_hand.vec()(i);
+		_pre_q_right_hand.vec()(i) = _q_right_hand.vec()(i);
+		_pre_qdot_left_hand.vec()(i) = _qdot_left_hand.vec()(i);
+		_pre_qdot_right_hand.vec()(i) = _qdot_right_hand.vec()(i);
 	}	
 
 	_vec_qdot_left_hand(0) = _qdot_left_hand.w();
@@ -816,8 +1258,10 @@ void CController::ModelUpdate()
 	_vec_qdot_right_hand.tail(3) = _qdot_right_hand.vec();
 
 	// Orientation angular velocity & acceleration
-	_w_left_hand = 2.0 * CustomMath::CalcAngularVelFromBodyFixedQuaternion(_q_left_hand) * _vec_qdot_left_hand;
-	_w_right_hand = 2.0 * CustomMath::CalcAngularVelFromBodyFixedQuaternion(_q_right_hand) * _vec_qdot_right_hand;
+	_w_left_hand = Model._w_left_hand; // world frame angular velocity
+	_w_left_hand = Model._w_right_hand; // world frame angular velocity
+	_omega_left_hand = Model._omega_left_hand.tail(3); // body-fixed frame angular velocity (frame of the end-effector)
+	_omega_right_hand = Model._omega_right_hand.tail(3); // body-fixed frame angular velocity (frame of the end-effector)
 	for (int i = 0; i < 3; i++)
 	{
 		_wdot_left_hand(i) = CustomMath::VelLowpassFilter(_dt, 2.0 * PI * 20.0, _pre_w_left_hand(i), _w_left_hand(i), _pre_wdot_left_hand(i)); //low-pass filter
@@ -828,7 +1272,15 @@ void CController::ModelUpdate()
 		_pre_wdot_left_hand(i) =_wdot_left_hand(i);
 		_pre_wdot_right_hand(i) =_wdot_right_hand(i);
 	}
-	
+
+	// States of the both hands which contain position and orientation(quaternion)
+	_x_q_left_hand.head(3) = _x_left_hand.head(3);
+	_x_q_left_hand.tail(4) = _q_left_hand.coeffs();
+	_x_q_right_hand.head(3) = _x_right_hand.head(3);
+	_x_q_right_hand.tail(4) = _q_right_hand.coeffs();
+
+	_x_q_dot_left_hand = _xdot_left_hand;
+	_x_q_dot_right_hand = _xdot_right_hand;
 }
 
 void CController::JointControl()
@@ -941,16 +1393,6 @@ void CController::OperationalSpaceControlWithoutBodyLink()
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand + _acc_workspace_avoid_left;
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand + _acc_workspace_avoid_left;
 
-	_q_des_vec_left_hand = _q_des_left_hand.vec();
-	_q_des_vec_right_hand = _q_des_right_hand.vec();
-	_q_des_scalar_left_hand = _q_des_left_hand.w();
-	_q_des_scalar_right_hand = _q_des_right_hand.w();
-	_q_des_skew_left_hand = CustomMath::skew(_q_des_vec_left_hand);
-	_q_des_skew_right_hand = CustomMath::skew(_q_des_vec_right_hand);
-
-	_q_err_left_hand = _q_des_scalar_left_hand * _q_left_hand.vec() - _q_left_hand.w() * _q_des_vec_left_hand + _q_des_skew_left_hand * _q_left_hand.vec();
-	_q_err_right_hand = _q_des_scalar_right_hand * _q_right_hand.vec() - _q_right_hand.w() * _q_des_vec_right_hand + _q_des_skew_right_hand * _q_right_hand.vec();
-
 	// Method 1
 	// _Lambda_hands_prism.setZero();
 	// _Lambda_hands_prism = CustomMath::pseudoInverseQR(_J_T_hands_prism) * Model._A * CustomMath::pseudoInverseQR(_J_hands_prism);
@@ -973,12 +1415,8 @@ void CController::OperationalSpaceControlWithoutBodyLink()
 	_Null_hands_K = _Id_14 - _J_K_T_hands * CustomMath::pseudoInverseQR(_J_K_T_hands) * Model._A.block<14, 14>(1, 1) * CustomMath::pseudoInverseQR(_J_K_T_hands.transpose()) * _J_K_T_hands.transpose() * Model._A.block<14, 14>(1, 1).inverse();
 
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand;//left hand position control
-	//_xddot_star.segment(3, 3) = _ka * (_w_des_left_hand - _x_left_hand.tail(3)) - _ko * _q_err_left_hand;//left hand orientation quaternion control _R_err_left_hand
-	//_xddot_star.segment(3, 3) = _ka * _R_err_left_hand - _ko * _q_err_left_hand;//left hand orientation quaternion control _R_err_left_hand
 	_xddot_star.segment(3, 3) = _kp * _R_err_left_hand + _kd * _Rdot_err_left_hand;//left hand orientation control
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand;//right hand position control
-	// _xddot_star.segment(9, 3) = _ka * (_w_des_right_hand - _x_right_hand.tail(3)) - _ko * _q_err_right_hand;//right hand orientation control _R_err_right_hand
-	//_xddot_star.segment(9, 3) = _ka * _R_err_right_hand - _ko * _q_err_right_hand;//right hand orientation control _R_err_right_hand
 	_xddot_star.segment(9, 3) = _kp * _R_err_right_hand + _kd * _Rdot_err_right_hand;//right hand orientation control
 
 	_torque_a = _J_K_T_hands * _Lambda_hands * _xddot_star + _Null_hands_K * (Model._A.block<14, 14>(1, 1) * (-_kdj * _qdot.segment(1, 14)));
@@ -1187,28 +1625,52 @@ void CController::ReducedHQPTaskSpaceControl()
 
 	_kp = 100.0;
 	_kd = 20.0;
+	_ko = 10.0; // _ko = _kp * 20;
+	_ka = 100.0; // _ka = std::sqrt(_ko);
 
-	_x_err_left_hand = _x_des_left_hand.head(3) - Model._x_left_hand;
-	_R_des_left_hand = CustomMath::GetBodyRotationMatrix(_x_des_left_hand(3), _x_des_left_hand(4), _x_des_left_hand(5));	
-	_R_err_left_hand = -CustomMath::getPhi(Model._R_left_hand, _R_des_left_hand);
-	_x_err_right_hand = _x_des_right_hand.head(3) - Model._x_right_hand;
-	_R_des_right_hand = CustomMath::GetBodyRotationMatrix(_x_des_right_hand(3), _x_des_right_hand(4), _x_des_right_hand(5));
-	_R_err_right_hand = -CustomMath::getPhi(Model._R_right_hand, _R_des_right_hand);
+	// For original cubic spline trajectory
+	// _x_err_left_hand = _x_des_left_hand.head(3) - Model._x_left_hand;
+	// _R_des_left_hand = CustomMath::GetBodyRotationMatrix(_x_des_left_hand(3), _x_des_left_hand(4), _x_des_left_hand(5));	
+	// _R_err_left_hand = -CustomMath::getPhi(Model._R_left_hand, _R_des_left_hand);
+	// _x_err_right_hand = _x_des_right_hand.head(3) - Model._x_right_hand;
+	// _R_des_right_hand = CustomMath::GetBodyRotationMatrix(_x_des_right_hand(3), _x_des_right_hand(4), _x_des_right_hand(5));
+	// _R_err_right_hand = -CustomMath::getPhi(Model._R_right_hand, _R_des_right_hand);
 
-	_xdot_err_left_hand = _xdot_des_left_hand.head(3) - Model._xdot_left_hand.segment(0, 3);
-	_Rdot_err_left_hand = -Model._xdot_left_hand.segment(3, 3); //only daming for orientation
-	_xdot_err_right_hand = _xdot_des_right_hand.head(3) - Model._xdot_right_hand.segment(0, 3);
-	_Rdot_err_right_hand = -Model._xdot_right_hand.segment(3, 3); //only daming for orientation	
+	// For original cubic spline trajectory
+	// _xdot_err_left_hand = _xdot_des_left_hand.head(3) - Model._xdot_left_hand.segment(0, 3);
+	// _Rdot_err_left_hand = -Model._xdot_left_hand.segment(3, 3); //only damping for orientation
+	// _xdot_err_right_hand = _xdot_des_right_hand.head(3) - Model._xdot_right_hand.segment(0, 3);
+	// _Rdot_err_right_hand = -Model._xdot_right_hand.segment(3, 3); //only damping for orientation	
 
+	/**
+	 * TODO: Calculate the quaternion error and desired quaternion
+	 * @required: the desired angular velocities of both hands and current angulat velocities of the both hands
+	 * @required: desired quaternion and current quaternion
+	 */
+	_x_err_left_hand = _x_q_des_left_hand.head(3) - Model._x_left_hand;
+	_x_err_right_hand = _x_q_des_right_hand.head(3) - Model._x_right_hand;
+	_xdot_err_left_hand = _x_q_dot_des_left_hand.head(3) - Model._xdot_left_hand.segment(0, 3);
+	_xdot_err_right_hand = _x_q_dot_des_right_hand.head(3) - Model._xdot_right_hand.segment(0, 3);
+
+	_q_err_left_hand = _x_q_des_left_hand.coeff(6) * _q_left_hand.coeffs().head(3) - _q_left_hand.w() * _x_q_des_left_hand.segment(3, 3) + CustomMath::skew(_x_q_des_left_hand.segment(3, 3)) * _q_left_hand.coeffs().head(3);
+	_q_err_right_hand = _x_q_des_right_hand.coeff(6) * _q_right_hand.coeffs().head(3) - _q_right_hand.w() * _x_q_des_right_hand.segment(3, 3) + CustomMath::skew(_x_q_des_right_hand.segment(3, 3)) * _q_right_hand.coeffs().head(3);
+
+	// For original cubic spline trajectory
+	// _xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand; //left hand position control
+	// _xddot_star.segment(3, 3) = _kp * _R_err_left_hand + _kd * _Rdot_err_left_hand; //left hand orientation control
+	// _xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand; //right hand position control
+	// _xddot_star.segment(9, 3) = _kp * _R_err_right_hand + _kd * _Rdot_err_right_hand; //right hand orientation control
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand; //left hand position control
-	_xddot_star.segment(3, 3) = _kp * _R_err_left_hand + _kd * _Rdot_err_left_hand; //left hand orientation control
+	_xddot_star.segment(3, 3) = _ka * _x_q_dot_des_left_hand.tail(3) - _ko * _q_err_left_hand; //left hand orientation control  // (_x_q_dot_des_left_hand.tail(3) - _w_left_hand)
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand; //right hand position control
-	_xddot_star.segment(9, 3) = _kp * _R_err_right_hand + _kd * _Rdot_err_right_hand; //right hand orientation control
+	_xddot_star.segment(9, 3) = _ka * _x_q_dot_des_right_hand.tail(3) - _ko * _q_err_right_hand; //right hand orientation control  // (_x_q_dot_des_right_hand.tail(3) - _w_right_hand)
 
 	safeWorkSpaceLimit();
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand + _acc_workspace_avoid_left;
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand + _acc_workspace_avoid_left;
-		
+
+	_quat << _x_q_des_left_hand.tail(4).transpose() << ' ' << _t << '\n';
+	_ori << _x_q_dot_des_left_hand.tail(3).transpose() << ' ' << _t << '\n';
 
 	if (_bool_safemode == false)
 	{
@@ -1376,7 +1838,9 @@ void CController::ReducedHQPTaskSpaceControl()
 		VectorXd joint_acc_des(15);
 		joint_acc_des.setZero();
 		_kdj = 20.0;
-		joint_acc_des = -_kdj * _qdot;
+		_kpj = 100.0;
+		joint_acc_des = _kpj * ((Model._max_joint_position + Model._min_joint_position) / 2.0 - _q)-_kdj * _qdot;
+		// joint_acc_des = -_kdj * _qdot;
 		joint_acc_des(0) = 0.0;
 		//joint_acc_des(0) = 400.0 * (_q_home(0)- _q(0)) - _kdj * _qdot(0);
 
@@ -1550,6 +2014,35 @@ void CController::safeWorkSpaceLimit()
 	
 }
 
+// void CController::tfCallBack(const tf::StampedTransform *transform)
+// {
+// 	Eigen::Vector3d pos, ori;
+//     pos.setZero();
+//     ori.setZero();
+//     pos.x() = transform->getOrigin().x();
+//     pos.y() = transform->getOrigin().y();
+//     pos.z() = transform->getOrigin().z();
+//     Eigen::Quaterniond quat;
+//     quat.x() = transform->getRotation().x();
+//     quat.y() = transform->getRotation().y();
+//     quat.z() = transform->getRotation().z();
+//     quat.w() = transform->getRotation().w();
+// 	// cout << "Received!! pos: " << pos.transpose() << ",\t ori: " << quat.coeffs().transpose() << '\n';
+// }
+
+// bool CController::getObjectPosition(const ros::Publisher *pub)
+// {
+// 	if (_is_object_required == true)
+// 	{
+// 		cout << "send!" << _object_name.data << '\n';
+// 		ros::Publisher pub_ = *pub;
+// 		pub_.publish(_object_name);
+// 		_is_object_required = false;
+// 		return true;
+// 	}
+// 	else return false;
+// }
+
 void CController::Initialize()
 {
 	_control_mode = 1; //1: joint space, 2: operational space
@@ -1564,6 +2057,7 @@ void CController::Initialize()
 
 	_q.setZero(_dofj);
 	_qdot.setZero(_dofj);
+	_qddot.setZero(_dofj); // To calculate the angular velocity which is based on body-fixed frame (end-effector)
 	_torque.setZero(_dofj);
 	_torque_a.setZero(14);
 
@@ -1572,32 +2066,33 @@ void CController::Initialize()
 
 	_q_home.setZero(_dofj);
 	_q_home(0) = 0.0;
-	_q_home(1) = 30.0 * DEG2RAD; //LShP
-	_q_home(8) = -30.0 * DEG2RAD; //RShP
-	_q_home(2) = 20.0 * DEG2RAD; //LShR
-	_q_home(9) = -20.0 * DEG2RAD; //RShR
+	_q_home(1) = 40.0 * DEG2RAD; //increased initial angle of LShP 		30.0 *  DEG2RAD; // LShP
+	_q_home(8) = -40.0 * DEG2RAD; //increased initial angle of RShP 		30.0 *  DEG2RAD; // RShP
+	_q_home(2) = 20.0 * DEG2RAD; // LShR
+	_q_home(9) = -20.0 * DEG2RAD; // RShR
 	_q_home(4) = 80.0 * DEG2RAD; //LElP
 	_q_home(11) = -80.0 * DEG2RAD; //RElP
 	_q_home(6) = -30.0 * DEG2RAD; //LWrP
 	_q_home(13) = 30.0 * DEG2RAD; //RWrP
 
-	// _q_limit.setZero(_dofj); // TEST(!!!!!!!!!!!!!!!!!!!!!!!!!)
-	// _q_limit(0) = 0.0;			 // Body height
-	// _q_limit(1) = -90.0 * DEG2RAD; // LShP
-	// _q_limit(2) = 0.0 * DEG2RAD; // LShR
-	// _q_limit(3) = 0.0 * DEG2RAD; // LShY
-	// _q_limit(4) = 0.0 * DEG2RAD; // LElP
-	// _q_limit(5) = 0.0 * DEG2RAD; // LWrY
-	// _q_limit(6) = 0.0 * DEG2RAD; // LWrP
-	// _q_limit(7) = 0.0 * DEG2RAD; // LWrR
+	_q_task.setZero(_dofj); // position of task
+	_q_task(0) = 0.0;			 // Body height
+	_q_task(1) = 40.0 * DEG2RAD; // LShP
+	_q_task(2) = 20.0 * DEG2RAD; // LShR
+	_q_task(3) = 0.0 * DEG2RAD; // LShY
+	_q_task(4) = 80.0 * DEG2RAD; // LElP
+	_q_task(5) = 0.0 * DEG2RAD; // LWrY
+	_q_task(6) = -30.0 * DEG2RAD; // LWrP
+	_q_task(7) = 10.0 * DEG2RAD; // LWrR
 
-	// _q_limit(8) = 90.0 * DEG2RAD; // RShP
-	// _q_limit(9) = 0.0 * DEG2RAD; // RShR
-	// _q_limit(10) = 0.0 * DEG2RAD; // RShY
-	// _q_limit(11) = 0.0 * DEG2RAD; // RElP
-	// _q_limit(12) = 0.0 * DEG2RAD; // RWrY
-	// _q_limit(13) = 0.0 * DEG2RAD; // RWrP
-	// _q_limit(14) = 0.0 * DEG2RAD; // RWrR
+	_q_task(8) = -40.0 * DEG2RAD; // RShP
+	_q_task(9) = -30.0 * DEG2RAD; // RShR
+	_q_task(10) = -0.0 * DEG2RAD; // RShY
+	_q_task(11) = -100.0 * DEG2RAD; // RElP
+	_q_task(12) = -75.0 * DEG2RAD; // RWrY
+	_q_task(13) = 0.0 * DEG2RAD; // RWrP
+	_q_task(14) = -30.0 * DEG2RAD; // RWrR
+
 	_start_time = 0.0;
 	_end_time = 0.0;
 	_motion_time = 0.0;
@@ -1638,6 +2133,9 @@ void CController::Initialize()
 	_bool_plan.setZero(20);
 	_time_plan.resize(100);
 	_time_plan.setConstant(5.0);
+	// Motion Plan
+	_cnt_traj_plan = 0;
+	_bool_traj_plan.setZero(100);
 	reset_target(_time_plan(_cnt_plan), _q_home);
 
 	_kpj = 400.0;
@@ -1754,6 +2252,8 @@ void CController::Initialize()
 
 	// ROS
 	_joy_vec_command.setZero(19);
+	_is_object_required = false;
+	_object_name.data = "N/A";
 
 	// Joystick
 	_joy_button = "N/A";
@@ -1790,8 +2290,8 @@ void CController::Initialize()
 
 	_q_goal_left_hand.vec().setZero();
 	_q_goal_right_hand.vec().setZero();
-	_q_goal_left_hand.w() = 0.0;
-	_q_goal_right_hand.w() = 0.0;
+	_q_goal_left_hand.w() = 1.0;
+	_q_goal_right_hand.w() = 1.0;
 	_q_des_vec_left_hand.setZero();
 	_q_des_vec_right_hand.setZero();
 	_q_des_scalar_left_hand = 0.0;
@@ -1829,4 +2329,84 @@ void CController::Initialize()
 	// _ofs_HQP.open("/home/kist/Octave/Dual-arm/Dataset/HQP.txt");
 	// remove("/home/kist/Octave/Dual-arm/Dataset/RHQP.txt");
 	// _ofs_RHQP.open("/home/kist/Octave/Dual-arm/Dataset/RHQP.txt");
+
+	// Motino Plan
+	_pos_start_left_hand.setZero(); // for offline planning
+	_rpy_start_left_hand.setZero(); // for offline planning
+	_pos_start_right_hand.setZero(); // for offline planning
+	_rpy_start_right_hand.setZero(); // for offline planning
+
+	_x_left_shoulder_to_hand.setZero();
+	_x_right_shoulder_to_hand.setZero();
+	_x_des_left_orientation.setZero();
+	_x_des_right_orientation.setZero();
+
+	_min_task_position.setZero();
+	_min_task_position(0) = 0.0;
+	_min_task_position(1) = -1.0;
+	_min_task_position(2) = 0.0;
+
+	_max_task_position.setZero();
+	_max_task_position(0) = 1.5;
+	_max_task_position(1) = 1.0;
+	_max_task_position(2) = 1.5;
+
+	_low_task_bounds.setZero(3);
+	_high_task_bounds.setZero(3);
+	_low_task_bounds.head(3) = _min_task_position;
+	_high_task_bounds.head(3) = _max_task_position;
+
+	LeftHandMotionPlan.constructStateSpace();
+	LeftHandMotionPlan.setBoundsOfState(_low_task_bounds, _high_task_bounds);
+	LeftHandMotionPlan.constructSpaceInformation();
+	
+	RightHandMotionPlan.constructStateSpace();
+	RightHandMotionPlan.setBoundsOfState(_low_task_bounds, _high_task_bounds);
+	RightHandMotionPlan.constructSpaceInformation();
+
+	_state_count_left_hand = 0;
+	_state_count_right_hand = 0;
+
+	_traj_pos_goal_left_hand.setZero(3, 100);
+	_traj_ori_goal_left_hand.setZero(4, 100);
+	_traj_pos_goal_right_hand.setZero(3, 100);
+	_traj_ori_goal_right_hand.setZero(4, 100);
+	_R_left_hand.setZero();
+	_R_right_hand.setZero();
+	_traj_R_left_hand.setZero();
+	_traj_R_right_hand.setZero();
+	_x_traj_goal_left_hand.setZero(7);
+	_x_traj_goal_right_hand.setZero(7);
+	_xdot_traj_goal_left_hand.setZero(6);
+	_xdot_traj_goal_right_hand.setZero(6);
+	
+	_x_q_left_hand.setZero(7);
+	_x_q_right_hand.setZero(7);
+	_x_q_dot_left_hand.setZero(6);
+	_x_q_dot_right_hand.setZero(6);
+	_x_q_des_left_hand.setZero(7);
+	_x_q_des_right_hand.setZero(7);
+	_x_q_dot_des_left_hand.setZero(6);
+	_x_q_dot_des_right_hand.setZero(6);
+
+	double traj_threshold_pos = 0.01;
+	double traj_threshold_ori = 0.001;
+	_traj_threshold.setZero(6);
+	_traj_threshold.head(3).setConstant(traj_threshold_pos);
+	_traj_threshold.tail(3).setConstant(traj_threshold_ori);
+
+	_size_motion_plan_left_hand = 0;
+	_size_motion_plan_right_hand = 0;
+	_bool_motion_plan_finished = false;
+	_bool_motion_plan_read = false;
+	_bool_traj_finished = false;
+	if (_bool_motion_plan_finished == false){
+		_motion_plan_left_hand.open("/home/kist/Octave/Dual-arm/Log/motion_plan_left_hand.txt");
+		_motion_plan_right_hand.open("/home/kist/Octave/Dual-arm/Log/motion_plan_right_hand.txt");
+		// _motion_plan_left_hand << "lh_x" << '\t' << "lh_y" << '\t' << "lh_z" << '\t' << "lh_R" << '\t' << "lh_P" << '\t' << "lh_Y" << '\n';
+		// _motion_plan_right_hand << "rh_x" << '\t' << "rh_y" << '\t' << "rh_z" << '\t' << "rh_R" << '\t' << "rh_P" << '\t' << "rh_Y" <<'\n'; 
+	}
+	_rot.open("/home/kist/cubic-spline/rot.txt");
+	_quat.open("/home/kist/cubic-spline/des.txt");
+	_ori.open("/home/kist/cubic-spline/ori.txt");
 }

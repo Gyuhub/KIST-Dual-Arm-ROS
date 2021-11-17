@@ -29,116 +29,74 @@ void CTrajectory::Initialize()
 	_goal_pos.setZero(_vector_size);
 	_goal_vel.setZero(_vector_size);
 
-	// Quaternion initialize
-	_init_quat.vec().setZero();
-	_init_quat.w() = 0.0;
-	_goal_quat.vec().setZero();
-	_goal_quat.w() = 0.0;
 	_bool_trajectory_complete = false;
-	_bool_trajectory_reset_init = false;
-	_bool_trajectory_update_init = false;
-	_bool_trajectory_iteration = false;
 
-	// Quaternion cubic spline variables
-	_phi = 0.0;
-	_psi_skew.setZero();
-	_psi_vec.setZero();
-	_q_i.vec().setZero();
-	_a_i.vec().setZero();
-	_b_i.vec().setZero();
-	_c_i.vec().setZero();
-	_s.vec().setZero();
-	_t.vec().setZero();
-	_u.vec().setZero();
-	_pre_a_i.vec().setZero();
-	_pre_b_i.vec().setZero();
-	_pre_c_i.vec().setZero();
-	_x.vec().setZero();
-	_res_quat.vec().setZero();
-	_pre_res_quat.vec().setZero();
-	_res_quatdot.vec().setZero();
-	_pre_res_quatdot.vec().setZero();
+	/**
+	 * Quaternion methods & variables
+	 */
+	_init_rot_mat.setZero();
+	_goal_rot_mat.setZero();
+	_start_pos.setZero();
+	_start_pos_vel.setZero();
+	_start_ori_vel.setZero();
+	_end_pos.setZero();
+	_end_pos_vel.setZero();
+	_end_ori_vel.setZero();
 
-	_q_i.w() = 0.0;
-	_a_i.w() = 0.0;
-	_b_i.w() = 0.0;
-	_c_i.w() = 0.0;
-	_s.w() = 0.0;
-	_t.w() = 0.0;
-	_u.w() = 0.0;
-	_pre_a_i.w() = 0.0;
-	_pre_b_i.w() = 0.0;
-	_pre_c_i.w() = 0.0;
-	_x.w() = 0.0;
-	_res_quat.w() = 0.0;
-	_pre_res_quat.w() = 0.0;
-	_res_quatdot.w() = 0.0;
-	_pre_res_quatdot.w() = 0.0;
+	_bool_pre_processing = false;
+	_bool_initialization = false;
 
-	_omega_s.setZero();
-	_omega_t.setZero();
-	_omega_c_i.setZero();
-	_vec_q_i.setZero();
-	_vec_a_i.setZero();
-	_vec_b_i.setZero();
-	_vec_c_i.setZero();
-	_vec_s.setZero();
-	_vec_t.setZero();
-	_vec_u.setZero();
-	_vec_pre_a_i.setZero();
-	_vec_pre_b_i.setZero();
-	_vec_pre_c_i.setZero();
-	_vec_x.setZero();
-	_vec_res_quatdot.setZero();
+	_init_w.setZero();
+	_init_alpha.setZero();
 
-	// Quaternion SQUAD variables
-	_qd.vec().setZero();
-	_qd.w() = 0.0;
-	_quat_s1.vec().setZero();
-	_quat_s1.w() = 0.0;
-	_quat_s2.vec().setZero();
-	_quat_s2.w() = 0.0;
-	_pre_init_quat.vec().setZero();
-	_pre_init_quat.w() = 0.0;
-	_pre_goal_quat.vec().setZero();
-	_pre_goal_quat.w() = 0.0;
+	for (int i = 0; i < MAX_SIZE; i++) {
+		_R[i].setZero();
+		_q[i].setZero();
+		_a[i].setZero();
+		_b[i].setZero();
+		_c[i].setZero();
+	}
 
-	_init_rotmat.setZero();
-	_goal_rotmat.setZero();
-	_des_rotmat.setZero();
-	_des_quat.vec().setZero();
-	_des_quat.w() = 0.0;
+	_x.setZero();
+	_z.setZero();
+	_z(3) = 1.0;
+
+	_phi= 0.0;
+	_dt = 0.002; // simulate time
+
+	_psi.setZero();
+	_wdotd.setZero();
+
+	_i = 1; // i is start from 1
 }
 
+// For original cubic spline
+// void CTrajectory::reset_initial(double time0, VectorXd init_pos, VectorXd init_vel)
+// {
+// 	check_vector_size(init_pos);
+// 	check_vector_size(init_vel);
+//
+// 	_time_start = time0;
+// 	_init_pos = init_pos;
+// 	_init_vel = init_vel;
+//
+// 	_bool_trajectory_complete = false;
+// }
+
+/**
+ * Initialize the variables for position and orientation trajectory generation
+ */ 
 void CTrajectory::reset_initial(double time0, VectorXd init_pos, VectorXd init_vel)
 {
-	check_vector_size(init_pos);
-	check_vector_size(init_vel);
-
 	_time_start = time0;
 	_init_pos = init_pos;
 	_init_vel = init_vel;
 
-	_bool_trajectory_complete = false;
-}
-
-void CTrajectory::reset_initial(double time0, Quaterniond init_quat, Matrix3d init_rotmat, Vector3d init_angvel, Vector3d init_angacc)
-{
-	_time_start = time0;
-	if (_bool_trajectory_reset_init == false)
-	{
-		_init_quat = init_quat;
-		_pre_init_quat = init_quat;
-		_bool_trajectory_reset_init = true;
-	}
-	else
-	{
-		_pre_init_quat = _init_quat;
-		_init_quat = init_quat;
-	}
-	_init_rotmat = init_rotmat;
-	_init_angvel = init_angvel;
-	_init_angacc = init_angacc;
+	_start_pos = _init_pos.head(3);
+	_start_pos_vel = _init_vel.head(3);
+	// remove it
+	// _start_ori.coeffs() = _init_pos.tail(4).normalized();
+	_start_ori_vel = _init_vel.tail(3);
 
 	_bool_trajectory_complete = false;
 }
@@ -148,116 +106,31 @@ void CTrajectory::update_time(double time)
 	_time = time;
 }
 
+// For original cubic spline
+// void CTrajectory::update_goal(VectorXd goal_pos, VectorXd goal_vel, double goal_time)
+// {
+// 	check_vector_size(goal_pos);
+// 	check_vector_size(goal_vel);
+//
+// 	_goal_pos = goal_pos;
+// 	_goal_vel = goal_vel;
+//
+// 	_time_end = goal_time;
+// }
+
+/**
+ * Update the variables for position and orientation trajectory generation
+ */ 
 void CTrajectory::update_goal(VectorXd goal_pos, VectorXd goal_vel, double goal_time)
 {
-	check_vector_size(goal_pos);
-	check_vector_size(goal_vel);
 	_goal_pos = goal_pos;
 	_goal_vel = goal_vel;
-	_time_end = goal_time;
-}
 
-void CTrajectory::update_goal(Quaterniond goal_quat, Matrix3d goal_rotmat, double goal_time)
-{
-	_goal_rotmat = goal_rotmat;
-	if (_bool_trajectory_update_init == false)
-	{
-		_goal_quat = goal_quat;
-		_pre_goal_quat = goal_quat;
-		_phi = 1.0;
-		_psi_skew.setZero();
-		_q_i.w() = 1.0;
-		_psi_vec(0) = _psi_skew(2, 1);
-		_psi_vec(1) = _psi_skew(0, 2);
-		_psi_vec(2) = _psi_skew(1, 0);
-		_q_i.vec().setZero();
-
-		// // case 1. When initial angular velocity and acceleration are equal to zero
-		// _c_i.w() = 0.0;
-		// _c_i.vec().setZero();
-		//
-		// Quaterniond temp_quat;
-		// temp_quat.w() = 0.0;
-		// temp_quat.vec().setZero();
-		// Vector4d temp_vec_c_i, temp_vec_b_i, temp_vec;
-		// QuatToVec4D(temp_vec_c_i, _c_i);
-		// QuatToVec4D(temp_vec_b_i, _b_i);
-		// QuatToVec4D(temp_vec, temp_quat);
-		// Matrix4d temp_omega_c_i;
-		// temp_omega_c_i = CustomMath::MapFromQuaternionTo4DMatrix(_c_i);
-		// temp_vec_b_i = (temp_vec - 2.0 * temp_omega_c_i * temp_vec_c_i) / 4.0;
-		// Vec4DToQuat(_b_i, temp_vec_b_i);
-		//
-		// temp_quat.w() = 1.0;
-		// temp_quat.vec().setZero();
-		// _a_i.w() = _q_i.w() - _b_i.w() - _c_i.w() - temp_quat.w();
-		// _a_i.vec() = _q_i.vec() - _b_i.vec() - _c_i.vec() - temp_quat.vec();
-		//
-		// case 2. When initial angular velocity and acceleration are not equal to zero
-		_c_i.w() = 0.0;
-		_c_i.vec() = _init_angvel;
-
-		Quaterniond temp_quat;
-		temp_quat.w() = 0.0;
-		temp_quat.vec() = _init_angacc;
-		Vector4d temp_vec_c_i, temp_vec_b_i, temp_vec;
-		QuatToVec4D(temp_vec_c_i, _c_i);
-		QuatToVec4D(temp_vec_b_i, _b_i);
-		QuatToVec4D(temp_vec, temp_quat);
-		Matrix4d temp_omega_c_i;
-		temp_omega_c_i = CustomMath::MapFromQuaternionTo4DMatrix(_c_i);
-		temp_vec_b_i = (temp_vec - 2.0 * temp_omega_c_i * temp_vec_c_i) / 4.0;
-		Vec4DToQuat(_b_i, temp_vec_b_i);
-
-		temp_quat.w() = 1.0;
-		temp_quat.vec().setZero();
-		_a_i.w() = _q_i.w() - _b_i.w() - _c_i.w() - temp_quat.w();
-		_a_i.vec() = _q_i.vec() - _b_i.vec() - _c_i.vec() - temp_quat.vec();
-		_bool_trajectory_update_init = true;
-	}
-	else
-	{
-		_bool_trajectory_iteration = true;
-		_pre_goal_quat = _goal_quat;
-		_goal_quat = goal_quat;
-
-		_pre_c_i = _c_i;
-		_pre_b_i = _b_i;
-		_pre_a_i = _a_i;
-
-		_phi = ((_init_rotmat.transpose() * _goal_rotmat).trace() - 1.0) / 2.0;
-		_psi_skew = _init_rotmat.transpose() * _goal_rotmat - _goal_rotmat.transpose() * _init_rotmat;
-		_q_i.w() = sqrt((1.0 + _phi) / 2.0);
-		_psi_vec(0) = _psi_skew(2, 1);
-		_psi_vec(1) = _psi_skew(0, 2);
-		_psi_vec(2) = _psi_skew(1, 0);
-		_q_i.vec() = _psi_vec / _psi_vec.norm() * sqrt((1.0 - _phi) / 2.0);
-	}
-	_s = _q_i;
-	QuatToVec4D(_vec_s, _s);
-	QuatToVec4D(_vec_pre_a_i, _pre_a_i);
-	QuatToVec4D(_vec_pre_b_i, _pre_b_i);
-	QuatToVec4D(_vec_pre_c_i, _pre_c_i);
-
-	_vec_t = 3 * _vec_pre_a_i + 2 * _vec_pre_b_i + _vec_pre_c_i;
-	_vec_u = 6 * _vec_pre_a_i + 2 * _vec_pre_b_i;
-
-	Vec4DToQuat(_t, _vec_t);
-
-	_omega_s = CustomMath::MapFromQuaternionTo4DMatrix(_s);
-	_omega_t = CustomMath::MapFromQuaternionTo4DMatrix(_t);
-	_c_i = _omega_s * _vec_t;
-	_omega_c_i = CustomMath::MapFromQuaternionTo4DMatrix(_c_i);
-	QuatToVec4D(_vec_c_i, _c_i);
-
-	_vec_b_i = (_omega_t * _vec_t + _omega_s * _vec_u - _omega_c_i * _vec_c_i) / 2.0;
-
-	_vec_a_i(0) = _vec_s(0) - _vec_b_i(0) - _vec_c_i(0) - 1.0;
-	_vec_a_i.tail(3) = _vec_s.tail(3) - _vec_b_i.tail(3) - _vec_c_i.tail(3);
-
-	Vec4DToQuat(_c_i, _vec_c_i);
-	Vec4DToQuat(_b_i, _vec_b_i);
-	Vec4DToQuat(_a_i, _vec_a_i);
+	_end_pos = _goal_pos.head(3);
+	_end_pos_vel = _goal_vel.head(3);
+	// remove it
+	// _end_ori.coeffs() = _goal_pos.tail(4).normalized();
+	_end_ori_vel = _goal_vel.tail(3);
 	_time_end = goal_time;
 }
 
@@ -281,6 +154,46 @@ VectorXd CTrajectory::position_cubicSpline()
 	return xd;
 }
 
+/**
+ * Only create cubic spline of position, not orientation.
+ */
+Vector3d CTrajectory::positionCubicSpline()
+{
+	Vector3d xd;
+
+	if (_time <= _time_start)
+	{
+		xd = _start_pos;
+	}
+	else if (_time >= _time_end)
+	{
+		xd = _end_pos;
+	}
+	else {
+		xd = _start_pos + _start_pos_vel * (_time - _time_start)
+			+ (3.0 * (_end_pos - _start_pos) / ((_time_end - _time_start) * (_time_end - _time_start)) - 2.0 * _start_pos_vel / (_time_end - _time_start) - _end_pos_vel / (_time_end - _time_start)) * (_time - _time_start) * (_time - _time_start)
+			+ (-2.0 * (_end_pos - _start_pos) / ((_time_end - _time_start) * (_time_end - _time_start) * (_time_end - _time_start)) + (_start_pos_vel + _end_pos_vel) / ((_time_end - _time_start) * (_time_end - _time_start))) * (_time - _time_start) * (_time - _time_start) * (_time - _time_start);
+	}
+	return xd;
+}
+
+Quaterniond CTrajectory::orientationCubicSpline()
+{
+	if (_time <= _time_start)
+	{
+		_qd = _R[_i - 1];
+	}
+	else
+	{
+		double tau_ = (_time - _time_start) / (_time_end - _time_start);
+		_x = _a[_i] * (std::pow(tau_, 3.0)) + _b[_i] * (std::pow(tau_, 2.0)) + _c[_i] * tau_ + _z;
+		double x_square = _x.transpose() * _x;
+		Matrix3d R_ = _R[_i - 1] * Theta(_x) / x_square;
+		_qd = R_;
+	}
+	return _qd;
+}
+
 VectorXd CTrajectory::velocity_cubicSpline()
 {
 	VectorXd xdotd(_vector_size);
@@ -300,97 +213,77 @@ VectorXd CTrajectory::velocity_cubicSpline()
 	return xdotd;
 }
 
-Quaterniond CTrajectory::quaternion_angular_orientation_cubicSpline()
+/**
+ * Only create cubic spline of velocity of position, not velocity of orientation.
+ */
+Vector3d CTrajectory::velocityCubicSpline()
 {
-    double tau = (_time - _time_start) / (_time_end - _time_start);
-	if (_bool_trajectory_iteration == false)
-	{
-		_x.w() = _a_i.w() * (tau * tau * tau) + _b_i.w() * (tau * tau) + _c_i.w() * tau + 1.0;
-		_x.vec() = _a_i.vec() * (tau * tau * tau) + _b_i.vec() * (tau * tau) + _c_i.vec() * tau;
-		QuatToVec4D(_vec_x, _x);
-	}
-	else
-	{
-		_vec_x(0) = _vec_a_i(0) * (tau * tau * tau) + _vec_b_i(0) * (tau * tau) + _vec_c_i(0) * tau + 1.0;
-		_vec_x.tail(3) = _vec_a_i.tail(3) * (tau * tau * tau) + _vec_b_i.tail(3) * (tau * tau) + _vec_c_i.tail(3) * tau;
-	}
-	
-	Vec4DToQuat(_res_quat, _vec_x);
-	Matrix3d res_mat;
-	res_mat = _init_rotmat * CustomMath::ConverseFromQuaternionToOGMatrix(_res_quat) / (_vec_x.transpose() * _vec_x);
-	return CustomMath::CalcMatrixToQuaternion(res_mat);
-}
+	Vector3d xdotd;
 
-Vector3d CTrajectory::quaternion_angular_velocity_cubicSpline(double dt)
-{
-	/*_res_quatdot.w() = CustomMath::VelLowpassFilter(dt, 2.0 * PI * 20.0, _pre_res_quat.w(), _res_quat.w(), _pre_res_quatdot.w());
-	
-	_pre_res_quat.w() = _res_quat.w();
-	_pre_res_quatdot.w() = _res_quatdot.w();
-
-	for (int i = 0; i < 3; i++)
-	{
-		_res_quatdot.vec().coeffRef(i) = CustomMath::VelLowpassFilter(dt, 2.0 * PI * 20.0, _pre_res_quat.vec().coeffRef(i), _res_quat.vec().coeffRef(i), _pre_res_quatdot.vec().coeffRef(i));
-	
-		_pre_res_quat.vec().coeffRef(i) = _res_quat.vec().coeffRef(i);
-		_pre_res_quatdot.vec().coeffRef(i) = _res_quatdot.vec().coeffRef(i);
-	}	*/
-	if (_bool_trajectory_iteration == false)
-	{
-		_pre_res_quat = _res_quat;
-	}
-	_res_quatdot.w() = (_res_quat.w() - _pre_res_quat.w()) / dt;
-	_res_quatdot.vec() = (_res_quat.vec() - _pre_res_quat.vec()) / dt;
-	_pre_res_quat = _res_quat;
-	_vec_res_quatdot(0) = _res_quatdot.w();
-	_vec_res_quatdot.tail(3) = _res_quatdot.vec();
-
-	return (2.0 * CustomMath::CalcAngularVelFromBodyFixedQuaternion(_res_quat) * _vec_res_quatdot);
-}
-
-Quaterniond CTrajectory::quaternion_SQUAD()
-{
 	if (_time <= _time_start)
 	{
-		_qd = _init_quat;
+		xdotd = _start_pos_vel;
 	}
 	else if (_time >= _time_end)
 	{
-		_qd = _goal_quat;
+		xdotd = _end_pos_vel;
 	}
-	else
+	else {
+		xdotd = _start_pos_vel + 2.0 * (3.0 * (_end_pos - _start_pos) / ((_time_end - _time_start) * (_time_end - _time_start)) - 2.0 * _start_pos_vel / (_time_end - _time_start) - _end_pos_vel / (_time_end - _time_start)) * (_time - _time_start)
+			+ 3.0 * (-2.0 * (_end_pos - _start_pos) / ((_time_end - _time_start) * (_time_end - _time_start) * (_time_end - _time_start)) + (_start_pos_vel + _end_pos_vel) / ((_time_end - _time_start) * (_time_end - _time_start))) * (_time - _time_start) * (_time - _time_start);
+	}
+	return xdotd;
+}
+
+Vector3d CTrajectory::orientationVelocityCubicSpline(Vector3d omega)
+{
+	if (_time <= _time_start)
 	{
-		// For quaternion spherical quadrangle interpoltation
-		// _quat_temp_1 = CustomMath::LogQuaternion(CustomMath::MultiplicationTwoQuaternions(_init_quat.inverse(), _pre_goal_quat));
-		// _quat_temp_2 = CustomMath::LogQuaternion(CustomMath::MultiplicationTwoQuaternions(_init_quat.inverse(), _pre_init_quat));
-		// _quat_sum.vec() = -(_quat_temp_1.vec() + _quat_temp_2.vec()) / 4.0;
-		// _quat_sum.w() = -(_quat_temp_1.w() + _quat_temp_2.w()) / 4.0;
-		// _quat_s1 = _init_quat * CustomMath::ExpQuaternion(_quat_sum);
-
-		// _quat_temp_1 = CustomMath::LogQuaternion(CustomMath::MultiplicationTwoQuaternions(_pre_goal_quat.inverse(), _goal_quat));
-		// _quat_temp_2 = CustomMath::LogQuaternion(CustomMath::MultiplicationTwoQuaternions(_pre_goal_quat.inverse(), _init_quat));
-		// _quat_sum.vec() = -(_quat_temp_1.vec() + _quat_temp_2.vec()) / 4.0;
-		// _quat_sum.w() = -(_quat_temp_1.w() + _quat_temp_2.w()) / 4.0;
-		// _quat_s2 = _pre_goal_quat * CustomMath::ExpQuaternion(_quat_sum);
-		//_qd = (_init_quat.slerp((_time - _time_start) * (_time_end - _time), _goal_quat)).slerp(2 * (_time - _time_start) * (_time_end - _time) * (1 - (_time - _time_start) * (_time_end - _time)), _quat_s1.slerp((_time - _time_start) * (_time_end - _time), _quat_s2));
-
-		_qd = _init_quat.slerp((_time - _time_start)/(_time_end - _time_start), _goal_quat);
+		_wdotd = _start_ori_vel;
 	}
-	return _qd;
-}
+	else if (_time >= _time_end)
+	{
+		_wdotd = _end_ori_vel;
+	}
+	else {
+		AngleAxisd aa_d_, aa_;
+		aa_d_ = _qd;
+		aa_ = q.normalized();
+		double phi_d_ = aa_d_.angle();
+		double phi_ = aa_.angle();
+		Vector3d axis_ = aa_d_.axis();
+		Vector4d q_;
+		q_(0) = std::cos(phi_d_ / 2.0);
+		q_(1) = axis_(0) * std::sin(phi_d_ / 2.0);
+		q_(2) = axis_(1) * std::sin(phi_d_ / 2.0);
+		q_(3) = axis_(2) * std::sin(phi_d_ / 2.0);
+		// std::complex<double> i_(1 ,1);
+		// Matrix2cd M_;
+		// M_ << q_(0) + q_(1)*i_ , q_(2) + q_(3)*i_
+		// 	,-q_(2) + q_(3)*i_ , q_(0) - q_(1)*i_;
+		MatrixXd M_inv;
+		M_inv.setZero(3, 4);
+		M_inv << -q_(1) , q_(0) , q_(3) , -q_(2)
+				,-q_(2) ,-q_(3) , q_(0) ,  q_(1)
+				,-q_(3) , q_(2) ,-q_(1) ,  q_(0);
+		Vector4d qdot_;
+		double phi_dot_ = (phi_d_ - phi_) / _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
+		qdot_(0) = -std::sin(phi_d_ / 2.0) * phi_dot_;
+		qdot_(1) = axis_(0) * std::cos(phi_d_) * phi_dot_;
+		qdot_(2) = axis_(1) * std::cos(phi_d_) * phi_dot_;
+		qdot_(3) = axis_(2) * std::cos(phi_d_) * phi_dot_;
+		_wdotd = 2 * M_inv * qdot_;
+		
 
-template<class T1, class T2>
-void CTrajectory::QuatToVec4D(T1& Vec, T2& Quat)
-{
-	Vec(0) = Quat.w();
-	Vec.tail(3) = Quat.vec();
-}
 
-template<class T1, class T2>
-void CTrajectory::Vec4DToQuat(T1& Quat, T2& Vec)
-{
-	Quat.w() = Vec(0);
-	Quat.vec() = Vec.tail(3);
+		// AngleAxisd aa_des_, aa_;
+		// aa_des_ = _qd;
+		// aa_ = q;
+		// Matrix3d R_des_ = aa_des_.toRotationMatrix();
+		// Matrix3d R_ = aa_.toRotationMatrix();
+		// _wdotd = -CustomMath::getPhi(R_, R_des_);
+		return _wdotd;
+	}
 }
 
 void CTrajectory::check_vector_size(VectorXd X)
@@ -405,6 +298,84 @@ void CTrajectory::check_vector_size(VectorXd X)
 	}
 }
 
+void CTrajectory::getInitialRotationMatrix(Matrix3d R)
+{
+	_R[0] = R;
+}
+
+void CTrajectory::getRotationMatrices(MatrixXd R, int state_size)
+{
+	for (int i = 1; i <= state_size; i++)
+	{
+		Vector4d quat_vec_ = R.block<4, 1>(0, i-1);
+		Quaterniond quat_;
+		quat_.coeffs() = quat_vec_;
+		// _R[i] = _R[i - 1] * quat_.normalized().toRotationMatrix();
+		_R[i] = quat_.normalized().toRotationMatrix();
+	}
+}
+
+void CTrajectory::preProcessing(int state_size)
+{
+	if (_bool_pre_processing == false)
+	{
+		for (int i = 1; i <= state_size; i++)
+		{
+			Matrix3d skew_rot_mat_;
+			skew_rot_mat_.setZero();
+			skew_rot_mat_ = (_R[i - 1].transpose() * _R[i]);
+			if (((skew_rot_mat_.transpose() + skew_rot_mat_) / 2.0).isIdentity())
+			{
+				_phi = 0.0;
+				_q[i].head(3) = Eigen::Vector3d::Zero(3);
+				_q[i](3) = std::sqrt(1.0 / 2.0);
+			}
+			else
+			{
+				_phi = (((_R[i - 1].transpose() * _R[i]).trace()) - 1.0) / 2.0;
+				skew_rot_mat_ = ((_R[i - 1].transpose() * _R[i]) - (_R[i].transpose() * _R[i - 1]));
+				_psi(0) = skew_rot_mat_(2, 1);
+				_psi(1) = skew_rot_mat_(0, 2);
+				_psi(2) = skew_rot_mat_(1, 0);
+				_q[i].head(3) = _psi * (1.0 / _psi.norm()) * std::sqrt(((1.0 - _phi) / 2.0));
+				_q[i](3) = std::sqrt(((1.0 + _phi) / 2.0));
+			}
+			// _q[i].normalize();
+		}
+		_bool_pre_processing = true;
+	}
+	else return;
+}
+
+void CTrajectory::initialization()
+{
+	if (_bool_initialization == false)
+	{
+		for (int i = 0; i < 3; i++) _c[1](i) = _init_w(i) / 2.0;
+		_c[1](3) = 0.0;
+		Eigen::Vector4d omega_cc_ = Omega(_c[1]) * _c[1];
+		for (int i = 0; i < 3; i++) _b[1](i) = (_init_alpha(i) - 2.0 * omega_cc_(i)) / 4.0;
+		_b[1](3) = (omega_cc_(3)) * -2.0 / 4.0;
+		_a[1] = _q[1] - _b[1] - _c[1] - _z;
+		_bool_initialization = true;
+	}
+	else return;
+}
+
+void CTrajectory::iterate(int state_size)
+{
+	for (int i = 2; i <= state_size; i++)
+	{
+		Vector4d s_, t_, u_; s_.setZero(); t_.setZero(); u_.setZero();
+		s_ = _q[i];
+		t_ = 3 * _a[i - 1] + 2 * _b[i - 1] + _c[i - 1];
+		u_ = 6 * _a[i - 1] + 2 * _b[i - 1];
+		_c[i] = Omega(s_) * t_;
+        _b[i] = (Omega(t_) * t_ + Omega(s_) * u_ - Omega(_c[i]) * _c[i]) / 2.0;
+        _a[i] = s_ - _b[i] - _c[i] - _z;
+	}
+}
+
 int CTrajectory::check_trajectory_complete() //1 = time when trajectory complete
 {
 	int diff = 0;
@@ -416,4 +387,29 @@ int CTrajectory::check_trajectory_complete() //1 = time when trajectory complete
 	}
 
 	return diff;
+}
+
+Matrix4d CTrajectory::Omega(Vector4d x)
+{
+	Matrix4d omega_;
+	omega_ << x(3)  ,  x(2), -x(1), -x(0)
+        	, -x(2) ,  x(3),  x(0), -x(1)
+        	,  x(1) , -x(0),  x(3), -x(2)
+        	,  x(0) ,  x(1),  x(2),  x(3);
+	return omega_;
+}
+
+Matrix3d CTrajectory::Theta(Vector4d x)
+{
+	Matrix3d theta_;
+	theta_ << (x(3)*x(3) + x(0)*x(0) - x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(0)*x(1) - x(2)*x(3))                    , 2.0 * (x(0)*x(2) + x(1)*x(3))
+         	, 2.0 * (x(0)*x(1) + x(2)*x(3))                   , (x(3)*x(3) - x(0)*x(0) + x(1)*x(1) - x(2)*x(2) ) , 2.0 * (x(1)*x(2) - x(0)*x(3))
+         	, 2.0 * (x(0)*x(2) - x(1)*x(3))                   , 2.0 * (x(1)*x(2) + x(0)*x(3))                    , (x(3)*x(3) - x(0)*x(0) - x(1)*x(1) + x(2)*x(2) );
+	return theta_;
+}
+
+void CTrajectory::increaseStep()
+{
+	_i++;
+	return;
 }
