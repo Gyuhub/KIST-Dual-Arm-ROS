@@ -1,0 +1,107 @@
+<mujoco model="dualarm_rhand">
+    <compiler angle="radian" meshdir="meshes/" />
+    <option tolerance="1e-06" collision="predefined" cone="elliptic" jacobian="sparse" solver="CG" iterations="30" />
+    <size njmax="500" nconmax="100" />
+    <asset>
+        <mesh name="RHandbase_Link" file="RHandbase_Link.STL" />
+        <mesh name="Hand_RT1" file="Hand_RT1.STL" />
+        <mesh name="Hand_RT2" file="Hand_RT2.STL" />
+        <mesh name="Hand_RT3" file="Hand_RT3.STL" />
+        <mesh name="Hand_RT4" file="Hand_RT4.STL" />
+        <mesh name="Hand_RF1J1" file="Hand_RF1J1.STL" />
+        <mesh name="Hand_RF1J2" file="Hand_RF1J2.STL" />
+        <mesh name="Hand_RF1J3" file="Hand_RF1J3.STL" />
+        <mesh name="Hand_RF1J4" file="Hand_RF1J4.STL" />
+        <mesh name="Hand_RF2J1" file="Hand_RF2J1.STL" />
+        <mesh name="Hand_RF2J2" file="Hand_RF2J2.STL" />
+        <mesh name="Hand_RF2J3" file="Hand_RF2J3.STL" />
+        <mesh name="Hand_RF2J4" file="Hand_RF2J4.STL" />
+        <mesh name="Hand_RF3J1" file="Hand_RF3J1.STL" />
+        <mesh name="Hand_RF3J2" file="Hand_RF3J2.STL" />
+        <mesh name="Hand_RF3J3" file="Hand_RF3J3.STL" />
+        <mesh name="Hand_RF3J4" file="Hand_RF3J4.STL" />
+    </asset>
+    <worldbody>
+        <geom quat="-2.59734e-06 0.707108 0.707105 2.59735e-06" type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="RHandbase_Link" />
+        <body name="Hand_RT1" pos="0.010945 0.00632463 0.044721" quat="-0.70643 0.0308501 -0.0308556 0.706437">
+            <inertial pos="5.49453e-05 0.0141589 -0.0074296" quat="0.998952 0.045631 -0.000506768 -0.00355944" mass="0.0206488" diaginertia="1.87142e-06 1.36365e-06 9.66694e-07" />
+            <joint name="RT1" pos="0 0 0" axis="0 0 1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+            <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RT1" />
+            <body name="Hand_RT2" pos="5e-05 0.0441 0" quat="-2.59734e-06 2.59735e-06 0.707108 -0.707105">
+                <inertial pos="-2.98452e-12 0.000573264 0.00797915" quat="0.702887 0.711302 0 0" mass="0.00152599" diaginertia="6.01888e-08 5.38721e-08 3.40722e-08" />
+                <joint name="RT2" pos="0 0 0" axis="0 0 1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RT2" />
+                <body name="Hand_RT3" pos="0 0 0" quat="0.499998 -0.500002 0.5 0.5">
+                    <inertial pos="0.02005 0.000469812 -0.0005" quat="0.473244 0.525395 0.525395 0.473244" mass="0.0341379" diaginertia="3.07195e-06 2.04238e-06 1.54556e-06" />
+                    <joint name="RT3" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                    <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RT3" />
+                    <body name="Hand_RT4" pos="0.0401 0 -0.000675">
+                        <inertial pos="0.0191982 6.45169e-05 -0.000413501" quat="0.778805 -0.000659988 -0.000727599 0.627266" mass="0.0098292" diaginertia="6.11343e-07 4.92403e-07 3.88556e-07" />
+                        <joint name="RT4" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                        <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RT4" />
+                    </body>
+                </body>
+            </body>
+        </body>
+        <body name="Hand_RF1J1" pos="0.033168 -0.00632597 0.11515" quat="-0.707108 -5.1947e-06 9.54059e-12 -0.707105">
+            <inertial pos="-2.49922e-12 0.000124346 -0.00799875" quat="0.671191 0.741284 0 0" mass="0.00152599" diaginertia="6.01888e-08 5.38721e-08 3.40722e-08" />
+            <joint name="RF1J1" pos="0 0 0" axis="0 0.0871564 -0.996195" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+            <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF1J1" />
+            <body name="Hand_RF1J2" pos="0 0.0004981 4.3578e-05" quat="0.477706 0.521342 -0.52134 0.477708">
+                <inertial pos="0.02005 0.000469812 0" quat="0.473244 0.525395 0.525395 0.473244" mass="0.0341379" diaginertia="3.07195e-06 2.04238e-06 1.54556e-06" />
+                <joint name="RF1J2" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF1J2" />
+                <body name="Hand_RF1J3" pos="0.0401 0 -0.000125">
+                    <inertial pos="0.021345 0.00045246 -0.00026275" quat="0.477328 0.521687 0.521687 0.477328" mass="0.017723" diaginertia="1.5787e-06 1.06887e-06 7.79809e-07" />
+                    <joint name="RF1J3" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                    <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="Hand_RF1J3" />
+                    <body name="Hand_RF1J4" pos="0.03005 0 -5e-05">
+                        <inertial pos="0.019198 6.4517e-05 -0.0004135" quat="0.778804 -0.000660022 -0.000727632 0.627266" mass="0.0098292" diaginertia="6.1134e-07 4.924e-07 3.8856e-07" />
+                        <joint name="RF1J4" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                        <geom type="mesh" rgba="0.75294 0.75294 0.75294 1" mesh="Hand_RF1J4" />
+                    </body>
+                </body>
+            </body>
+        </body>
+        <body name="Hand_RF2J1" pos="-2.32362e-08 -0.00632586 0.1166" quat="-0.707108 -5.1947e-06 9.54059e-12 -0.707105">
+            <inertial pos="-2.49577e-12 -0.000573266 -0.00797915" quat="0.702887 0.711302 0 0" mass="0.00152599" diaginertia="6.01889e-08 5.38721e-08 3.40722e-08" />
+            <joint name="RF2J1" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+            <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF2J1" />
+            <body name="Hand_RF2J2" pos="0 0.0005 0" quat="0.499998 0.5 -0.5 0.500002">
+                <inertial pos="0.02005 0.000469812 0" quat="0.473244 0.525395 0.525395 0.473244" mass="0.0341379" diaginertia="3.07195e-06 2.04238e-06 1.54556e-06" />
+                <joint name="RF2J2" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF2J2" />
+                <body name="Hand_RF2J3" pos="0.0401 0 -0.000125">
+                    <inertial pos="0.0213453 0.000452463 -0.000262751" quat="0.47733 0.521686 0.521686 0.47733" mass="0.0177234" diaginertia="1.57868e-06 1.06889e-06 7.79807e-07" />
+                    <joint name="RF2J3" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                    <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF2J3" />
+                    <body name="Hand_RF2J4" pos="0.03005 0 -5e-05">
+                        <inertial pos="0.0191982 6.45145e-05 -0.000413505" quat="0.778809 -0.000661237 -0.000728567 0.62726" mass="0.0098292" diaginertia="6.11342e-07 4.92404e-07 3.88555e-07" />
+                        <joint name="RF2J4" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                        <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF2J4" />
+                    </body>
+                </body>
+            </body>
+        </body>
+        <body name="Hand_RF3J1" pos="-0.033168 -0.00632572 0.11515" quat="-0.707108 -5.1947e-06 9.54059e-12 -0.707105">
+            <inertial pos="0 -0.00126651 -0.00789883" quat="0.733244 0.679965 0 0" mass="0.00152599" diaginertia="6.01888e-08 5.38721e-08 3.40722e-08" />
+            <joint name="RF3J1" pos="0 0 0" axis="0 -0.0871564 -0.996195" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+            <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF3J1" />
+            <body name="Hand_RF3J2" pos="0 0.0004981 -4.3578e-05" quat="0.52134 0.477708 -0.477706 0.521342">
+                <inertial pos="0.02005 0.000469812 0" quat="0.473244 0.525395 0.525395 0.473244" mass="0.0341379" diaginertia="3.07195e-06 2.04238e-06 1.54556e-06" />
+                <joint name="RF3J2" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF3J2" />
+                <body name="Hand_RF3J3" pos="0.0401 0 -0.000125">
+                    <inertial pos="0.0213453 0.000452463 -0.000262751" quat="0.47733 0.521686 0.521686 0.47733" mass="0.0177234" diaginertia="1.57868e-06 1.06889e-06 7.79807e-07" />
+                    <joint name="RF3J3" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                    <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF3J3" />
+                    <body name="Hand_RF3J4" pos="0.03005 0 -5e-05">
+                        <inertial pos="0.0191982 6.4521e-05 -0.000413504" quat="0.778808 -0.000661492 -0.000727904 0.627261" mass="0.00982919" diaginertia="6.11342e-07 4.92404e-07 3.88555e-07" />
+                        <joint name="RF3J4" pos="0 0 0" axis="0 0 -1" limited="true" range="-3.14 3.14" damping="0.1" frictionloss="0.1" />
+                        <geom type="mesh" rgba="0.752941 0.752941 0.752941 1" mesh="Hand_RF3J4" />
+                    </body>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+</mujoco>

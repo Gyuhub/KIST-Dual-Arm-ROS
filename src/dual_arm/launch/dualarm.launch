@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="dual_arm" type="dualarm_exe" name="dualarm_exe" />
+</launch>
