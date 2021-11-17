@@ -33,5 +33,10 @@ sudo ldconfig
 ## First, you need to download the OMPL installation script. [Link](https://ompl.kavrakilab.org/installation.html)
 > After download the installation script, Make the script executable
 ```
+cd ~/(directory where you download the script)
 sudo chmod u+x install-ompl-ubuntu.sh
+```
+> Next, you need to execute the script with option (--github)
+```
+./install-ompl-ubuntu.sh --github
 ```
