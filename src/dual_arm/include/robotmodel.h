@@ -47,7 +47,7 @@ public:
 	Quaterniond _q_right_hand; //quaternion right hand
 	Vector3d _q_vec_left_hand, _q_vec_right_hand; //quaternion x,y,z vector 3x1
 	Vector3d _w_left_hand, _w_right_hand; //angular velocity vector 3x1
-	Vector3d _omega_left_hand, _omega_right_hand; // angular velocity vector which is calculated at body-fixed frame (end-effector) 3x1
+	VectorXd _omega_left_hand, _omega_right_hand; // linear & angular velocity vector which is calculated at body-fixed frame (end-effector) 6x1
 	float _q_scalar_left_hand; //quaternion w scalar
 	float _q_scalar_right_hand; //quaternion w scalar
 

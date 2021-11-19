@@ -1065,7 +1065,7 @@ void CController::control_mujoco(_Float64 _joy_command[])
 		_x_q_des_left_hand.head(3) = LeftHandTrajectory.positionCubicSpline(); 
 		_x_q_dot_des_left_hand.head(3) = LeftHandTrajectory.velocityCubicSpline();
 		_x_q_des_left_hand.tail(4) = LeftHandTrajectory.orientationCubicSpline().coeffs();
-		_x_q_dot_des_left_hand.tail(3) = LeftHandTrajectory.orientationVelocityCubicSpline(_omega_left_hand);
+		_x_q_dot_des_left_hand.tail(3) = LeftHandTrajectory.orientationVelocityCubicSpline(_xdot_left_hand.tail(3)); //_omega_left_hand, _R_left_hand
 		Matrix3d mat = LeftHandTrajectory.orientationCubicSpline().toRotationMatrix();
 		_rot << _t << ' ' << mat(0, 0) << ' ' << mat(1, 0) << ' ' << mat(2, 0) << ' ' << mat(0, 1) << ' ' << mat(1, 1) << ' ' << mat(2, 1) << ' ' << mat(0, 2) << ' ' << mat(1, 2) << ' ' << mat(2, 2) << '\n';
 
@@ -1073,7 +1073,7 @@ void CController::control_mujoco(_Float64 _joy_command[])
 		_x_q_des_right_hand.head(3) = RightHandTrajectory.positionCubicSpline();
 		_x_q_dot_des_right_hand.head(3) = RightHandTrajectory.velocityCubicSpline();
 		_x_q_des_right_hand.tail(4) = RightHandTrajectory.orientationCubicSpline().coeffs();
-		_x_q_dot_des_right_hand.tail(3) = RightHandTrajectory.orientationVelocityCubicSpline(_omega_right_hand);
+		_x_q_dot_des_right_hand.tail(3) = RightHandTrajectory.orientationVelocityCubicSpline(_xdot_right_hand.tail(3)); //_omega_right_hand, _R_right_hand
 
 		if (_control_mode == 2)
 		{
@@ -1151,7 +1151,7 @@ void CController::control_mujoco(_Float64 _joy_command[])
 				_bool_traj_plan(0) = 1;
 				cout << "////////// Trajectory & Motion planning End! //////////" << "\n";
 				cout << "////////// Joint Control: move home //////////\n";
-				reset_target(100000000.0, _q_home);
+				reset_target(1.0, _q_home);
 			}
 			_bool_traj_finished = true;
 			cout << "////////// Trajectory reached to goal of motion plan! //////////" << '\n';
@@ -1259,7 +1259,7 @@ void CController::ModelUpdate()
 
 	// Orientation angular velocity & acceleration
 	_w_left_hand = Model._w_left_hand; // world frame angular velocity
-	_w_left_hand = Model._w_right_hand; // world frame angular velocity
+	_w_right_hand = Model._w_right_hand; // world frame angular velocity
 	_omega_left_hand = Model._omega_left_hand.tail(3); // body-fixed frame angular velocity (frame of the end-effector)
 	_omega_right_hand = Model._omega_right_hand.tail(3); // body-fixed frame angular velocity (frame of the end-effector)
 	for (int i = 0; i < 3; i++)
@@ -1625,8 +1625,8 @@ void CController::ReducedHQPTaskSpaceControl()
 
 	_kp = 100.0;
 	_kd = 20.0;
-	_ko = 10.0; // _ko = _kp * 20;
-	_ka = 100.0; // _ka = std::sqrt(_ko);
+	_ko = 1000.0; // _ko = _kp * 20;
+	_ka = 30.0; // _ka = std::sqrt(_ko);
 
 	// For original cubic spline trajectory
 	// _x_err_left_hand = _x_des_left_hand.head(3) - Model._x_left_hand;
@@ -1652,6 +1652,10 @@ void CController::ReducedHQPTaskSpaceControl()
 	_xdot_err_left_hand = _x_q_dot_des_left_hand.head(3) - Model._xdot_left_hand.segment(0, 3);
 	_xdot_err_right_hand = _x_q_dot_des_right_hand.head(3) - Model._xdot_right_hand.segment(0, 3);
 
+	// NOTE: change the equation of calculating error of quaternion
+	// _q_err_left_hand = CustomMath::CalcMatrixFromQuaternion(_x_q_des_left_hand.tail(4)) * _q_left_hand.coeffs();
+	// _q_err_right_hand = CustomMath::CalcMatrixFromQuaternion(_x_q_des_right_hand.tail(4)) * _q_right_hand.coeffs();
+
 	_q_err_left_hand = _x_q_des_left_hand.coeff(6) * _q_left_hand.coeffs().head(3) - _q_left_hand.w() * _x_q_des_left_hand.segment(3, 3) + CustomMath::skew(_x_q_des_left_hand.segment(3, 3)) * _q_left_hand.coeffs().head(3);
 	_q_err_right_hand = _x_q_des_right_hand.coeff(6) * _q_right_hand.coeffs().head(3) - _q_right_hand.w() * _x_q_des_right_hand.segment(3, 3) + CustomMath::skew(_x_q_des_right_hand.segment(3, 3)) * _q_right_hand.coeffs().head(3);
 
@@ -1661,17 +1665,17 @@ void CController::ReducedHQPTaskSpaceControl()
 	// _xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand; //right hand position control
 	// _xddot_star.segment(9, 3) = _kp * _R_err_right_hand + _kd * _Rdot_err_right_hand; //right hand orientation control
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand; //left hand position control
-	_xddot_star.segment(3, 3) = _ka * _x_q_dot_des_left_hand.tail(3) - _ko * _q_err_left_hand; //left hand orientation control  // (_x_q_dot_des_left_hand.tail(3) - _w_left_hand)
+	_xddot_star.segment(3, 3) = (_ka * (_x_q_dot_des_left_hand.tail(3) - _w_left_hand) - _ko * _q_err_left_hand); //left hand orientation control  // (_x_q_dot_des_left_hand.tail(3) - _w_left_hand)
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand; //right hand position control
-	_xddot_star.segment(9, 3) = _ka * _x_q_dot_des_right_hand.tail(3) - _ko * _q_err_right_hand; //right hand orientation control  // (_x_q_dot_des_right_hand.tail(3) - _w_right_hand)
+	_xddot_star.segment(9, 3) = (_ka * (_x_q_dot_des_right_hand.tail(3) - _w_right_hand) - _ko * _q_err_right_hand); //right hand orientation control  // (_x_q_dot_des_right_hand.tail(3) - _w_right_hand)
 
 	safeWorkSpaceLimit();
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand + _acc_workspace_avoid_left;
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand + _acc_workspace_avoid_left;
 
-	_quat << _x_q_des_left_hand.tail(4).transpose() << ' ' << _t << '\n';
-	_ori << _x_q_dot_des_left_hand.tail(3).transpose() << ' ' << _t << '\n';
-
+	_quat << _x_q_des_right_hand.tail(4).transpose() << ' ' << _t  << '\n';
+	//_ori << _x_q_dot_des_left_hand.tail(3).transpose() << ' ' << _t << '\n';
+	_ori << _x_q_right_hand.tail(4).transpose() << ' ' << _t << '\n';
 	if (_bool_safemode == false)
 	{
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

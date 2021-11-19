@@ -385,12 +385,12 @@ static Eigen::Matrix3d skew(Eigen::Vector3d src)
 {
     Eigen::Matrix3d skew;
     skew.setZero();
-    skew(0, 1) = -src[2];
-    skew(0, 2) = src[1];
-    skew(1, 0) = src[2];
-    skew(1, 2) = -src[0];
-    skew(2, 0) = -src[1];
-    skew(2, 1) = src[0];
+    skew(0, 1) = -src(2);
+    skew(0, 2) = src(1);
+    skew(1, 0) = src(2);
+    skew(1, 2) = -src(0);
+    skew(2, 0) = -src(1);
+    skew(2, 1) = src(0);
 
     return skew;
 }
@@ -686,6 +686,16 @@ static Eigen::Quaterniond CalcMatrixToQuaternion(Eigen::Matrix3d Mat)
     Q = AA;
 
     return Q;
+}
+
+static Eigen::Matrix3d CalcMatrixFromQuaternion(Eigen::Vector4d Quat) //calculate matrix form quaternion. If you want to use this method, you may change the type of quaternion from Quaterniond to Vector4d
+{
+    Vector4d x = Quat;
+	Matrix3d theta_;
+	theta_ << (x(3)*x(3) + x(0)*x(0) - x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(0)*x(1) - x(2)*x(3))                   , 2.0 * (x(0)*x(2) + x(1)*x(3))
+         	, 2.0 * (x(0)*x(1) + x(2)*x(3))                   , (x(3)*x(3) - x(0)*x(0) + x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(1)*x(2) - x(0)*x(3))
+         	, 2.0 * (x(0)*x(2) - x(1)*x(3))                   , 2.0 * (x(1)*x(2) + x(0)*x(3))                   , (x(3)*x(3) - x(0)*x(0) - x(1)*x(1) + x(2)*x(2));
+	return theta_;
 }
 
 static Eigen::Vector3d CalcQuaternionToVector(Eigen::Quaterniond Quat) //calculate vector from quaternion

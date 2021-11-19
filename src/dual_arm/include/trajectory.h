@@ -43,7 +43,7 @@ public:
 	Vector3d positionCubicSpline();
 	Vector3d velocityCubicSpline();
 	Quaterniond orientationCubicSpline();
-	Vector3d orientationVelocityCubicSpline(Vector3d omega);
+	Vector3d orientationVelocityCubicSpline(Vector3d omega); //(Vector3d omegaMatrix3d R) R is rotation matrix from base to body
 private:
 	void Initialize();
 	void check_vector_size(VectorXd X);
@@ -58,7 +58,7 @@ private:
 	Vector4d _x, _z; // x is the result of cubic polynomial and z is the transformation of quaternion which is obtained from identity matrix
 	Vector3d _init_w, _init_alpha, _psi, _wdotd;
 	Vector4d _q[MAX_SIZE]; // Vectors that contain the quaternion of each step from i = 1 to n
-	Quaterniond _qd;
+	Quaterniond _qd, _qd_pre;
 	int _i; // step of the orientation cubic spline which is counted from 0 to n. n is the index of final rotation matrix
 };
 

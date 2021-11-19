@@ -179,18 +179,20 @@ Vector3d CTrajectory::positionCubicSpline()
 
 Quaterniond CTrajectory::orientationCubicSpline()
 {
-	if (_time <= _time_start)
-	{
-		_qd = _R[_i - 1];
-	}
-	else
-	{
+	// if (_time <= _time_start)
+	// {
+	// 	_qd = _R[_i - 1];
+	// }
+	// else
+	// {
 		double tau_ = (_time - _time_start) / (_time_end - _time_start);
 		_x = _a[_i] * (std::pow(tau_, 3.0)) + _b[_i] * (std::pow(tau_, 2.0)) + _c[_i] * tau_ + _z;
 		double x_square = _x.transpose() * _x;
 		Matrix3d R_ = _R[_i - 1] * Theta(_x) / x_square;
 		_qd = R_;
-	}
+		if ((_qd.w() * _qd_pre.w()) < 0) for (int i = 0; i < 4; i++) _qd.coeffs()(i) = _qd.coeffs()(i) * -1.0;
+		_qd_pre = _qd;
+	// }
 	return _qd;
 }
 
@@ -246,42 +248,33 @@ Vector3d CTrajectory::orientationVelocityCubicSpline(Vector3d omega)
 		_wdotd = _end_ori_vel;
 	}
 	else {
-		AngleAxisd aa_d_, aa_;
+		AngleAxisd aa_d_;
 		aa_d_ = _qd;
-		aa_ = q.normalized();
 		double phi_d_ = aa_d_.angle();
-		double phi_ = aa_.angle();
-		Vector3d axis_ = aa_d_.axis();
-		Vector4d q_;
-		q_(0) = std::cos(phi_d_ / 2.0);
-		q_(1) = axis_(0) * std::sin(phi_d_ / 2.0);
-		q_(2) = axis_(1) * std::sin(phi_d_ / 2.0);
-		q_(3) = axis_(2) * std::sin(phi_d_ / 2.0);
+		Vector3d axis_d_ = aa_d_.axis();
+		Vector4d q_d_;
+		q_d_(0) = std::cos(phi_d_ / 2.0);
+		q_d_(1) = axis_d_(0) * std::sin(phi_d_ / 2.0);
+		q_d_(2) = axis_d_(1) * std::sin(phi_d_ / 2.0);
+		q_d_(3) = axis_d_(2) * std::sin(phi_d_ / 2.0);
 		// std::complex<double> i_(1 ,1);
 		// Matrix2cd M_;
 		// M_ << q_(0) + q_(1)*i_ , q_(2) + q_(3)*i_
 		// 	,-q_(2) + q_(3)*i_ , q_(0) - q_(1)*i_;
 		MatrixXd M_inv;
 		M_inv.setZero(3, 4);
-		M_inv << -q_(1) , q_(0) , q_(3) , -q_(2)
-				,-q_(2) ,-q_(3) , q_(0) ,  q_(1)
-				,-q_(3) , q_(2) ,-q_(1) ,  q_(0);
-		Vector4d qdot_;
-		double phi_dot_ = (phi_d_ - phi_) / _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
-		qdot_(0) = -std::sin(phi_d_ / 2.0) * phi_dot_;
-		qdot_(1) = axis_(0) * std::cos(phi_d_) * phi_dot_;
-		qdot_(2) = axis_(1) * std::cos(phi_d_) * phi_dot_;
-		qdot_(3) = axis_(2) * std::cos(phi_d_) * phi_dot_;
-		_wdotd = 2 * M_inv * qdot_;
-		
-
-
-		// AngleAxisd aa_des_, aa_;
-		// aa_des_ = _qd;
-		// aa_ = q;
-		// Matrix3d R_des_ = aa_des_.toRotationMatrix();
-		// Matrix3d R_ = aa_.toRotationMatrix();
-		// _wdotd = -CustomMath::getPhi(R_, R_des_);
+		M_inv << -q_d_(1) , q_d_(0) , q_d_(3) , -q_d_(2)
+				,-q_d_(2) ,-q_d_(3) , q_d_(0) ,  q_d_(1)
+				,-q_d_(3) , q_d_(2) ,-q_d_(1) ,  q_d_(0);
+		Vector4d qdot_d_;
+		Vector3d omega_ = omega * _dt;
+		double phi_ = std::sqrt(omega_(0)*omega_(0) + omega_(1)*omega_(1) + omega_(2)*omega_(2));
+		double phi_dot_ = (phi_d_ - phi_) * _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
+		qdot_d_(0) = -std::sin(phi_d_ / 2.0) * phi_dot_;
+		qdot_d_(1) = axis_d_(0) * std::cos(phi_d_) * phi_dot_;
+		qdot_d_(2) = axis_d_(1) * std::cos(phi_d_) * phi_dot_;
+		qdot_d_(3) = axis_d_(2) * std::cos(phi_d_) * phi_dot_;
+		_wdotd = 2 * M_inv * qdot_d_; // desired angular velocity of body frame, not world
 		return _wdotd;
 	}
 }
@@ -340,7 +333,7 @@ void CTrajectory::preProcessing(int state_size)
 				_q[i].head(3) = _psi * (1.0 / _psi.norm()) * std::sqrt(((1.0 - _phi) / 2.0));
 				_q[i](3) = std::sqrt(((1.0 + _phi) / 2.0));
 			}
-			// _q[i].normalize();
+			_q[i].normalize();
 		}
 		_bool_pre_processing = true;
 	}
@@ -392,7 +385,7 @@ int CTrajectory::check_trajectory_complete() //1 = time when trajectory complete
 Matrix4d CTrajectory::Omega(Vector4d x)
 {
 	Matrix4d omega_;
-	omega_ << x(3)  ,  x(2), -x(1), -x(0)
+	omega_ <<  x(3) ,  x(2), -x(1), -x(0)
         	, -x(2) ,  x(3),  x(0), -x(1)
         	,  x(1) , -x(0),  x(3), -x(2)
         	,  x(0) ,  x(1),  x(2),  x(3);
@@ -402,9 +395,9 @@ Matrix4d CTrajectory::Omega(Vector4d x)
 Matrix3d CTrajectory::Theta(Vector4d x)
 {
 	Matrix3d theta_;
-	theta_ << (x(3)*x(3) + x(0)*x(0) - x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(0)*x(1) - x(2)*x(3))                    , 2.0 * (x(0)*x(2) + x(1)*x(3))
-         	, 2.0 * (x(0)*x(1) + x(2)*x(3))                   , (x(3)*x(3) - x(0)*x(0) + x(1)*x(1) - x(2)*x(2) ) , 2.0 * (x(1)*x(2) - x(0)*x(3))
-         	, 2.0 * (x(0)*x(2) - x(1)*x(3))                   , 2.0 * (x(1)*x(2) + x(0)*x(3))                    , (x(3)*x(3) - x(0)*x(0) - x(1)*x(1) + x(2)*x(2) );
+	theta_ << (x(3)*x(3) + x(0)*x(0) - x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(0)*x(1) - x(2)*x(3))                   , 2.0 * (x(0)*x(2) + x(1)*x(3))
+         	, 2.0 * (x(0)*x(1) + x(2)*x(3))                   , (x(3)*x(3) - x(0)*x(0) + x(1)*x(1) - x(2)*x(2)) , 2.0 * (x(1)*x(2) - x(0)*x(3))
+         	, 2.0 * (x(0)*x(2) - x(1)*x(3))                   , 2.0 * (x(1)*x(2) + x(0)*x(3))                   , (x(3)*x(3) - x(0)*x(0) - x(1)*x(1) + x(2)*x(2));
 	return theta_;
 }
 

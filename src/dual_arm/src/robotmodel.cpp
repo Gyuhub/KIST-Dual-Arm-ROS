@@ -76,8 +76,8 @@ void CModel::Initialize()
 
 	_w_left_hand.setZero();
 	_w_right_hand.setZero();
-	_omega_left_hand.setZero();
-	_omega_right_hand.setZero();
+	_omega_left_hand.setZero(6);
+	_omega_right_hand.setZero(6);
 
 	set_robot_config();
 	load_model();
@@ -201,10 +201,10 @@ void CModel::calculate_EE_velocity()
 	{
 		_xdot_left_hand = _J_left_hand * _qdot;
 		_xdot_right_hand = _J_right_hand * _qdot;
-		// _w_left_hand = _global_rotate * _xdot_left_hand.tail(3);
-		// _w_right_hand = _global_rotate * _xdot_right_hand.tail(3);
-		_w_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_left_hand);
-		_w_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_right_hand);
+		_w_left_hand = _xdot_left_hand.tail(3);
+		_w_right_hand = _xdot_right_hand.tail(3);
+		// _w_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_left_hand);
+		// _w_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_right_hand);
 		_omega_left_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false);
 		_omega_right_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false);
 		//_w_left_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false).head(3);
