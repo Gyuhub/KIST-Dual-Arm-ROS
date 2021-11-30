@@ -25,25 +25,25 @@ void *TfRoutine(void *nh)
         static tf::TransformBroadcaster br_;
         br_ptr_ = &br_;
         tf::Transform transform_;
-        transform_.setOrigin(tf::Vector3(0.0, 2.0, 0.0));
+        transform_.setOrigin(tf::Vector3(5.0, 2.0, 3.0));
         tf::Quaternion q_;
-        q_.setRPY(10.0 * (3.14 / 180.0), 10.0  * (3.14 / 180.0), 20.0  * (3.14 / 180.0));
+        q_.setRPY(0.0, 0.0, 20.0  * (3.14 / 180.0));
         transform_.setRotation(q_);
         br_ptr_->sendTransform(tf::StampedTransform(transform_, ros::Time::now(), "base_link", "LWrR_Link"));
         // ROS_INFO("Send! x:[%lf],y:[%lf],z:[%lf],qx:[%lf],qy:[%lf],qz:[%lf],qw:[%lf]\n", transform_.getOrigin().x(), transform_.getOrigin().y(), transform_.getOrigin().z(),
         //                     transform_.getRotation().x(), transform_.getRotation().y(), transform_.getRotation().z(), transform_.getRotation().w());
         // rate.sleep();
     }
+    ros::spin();
 }
 
 int main(int argc, char *argv[])
 {
-    ros::init(argc, argv, "tf_test");
+    ros::init(argc, argv, "tf_test", ros::init_options::NoSigintHandler);
     ros::NodeHandle nh_;
     pthread_t pth_;
 
     int iret = 0;
     pthread_create(&pth_, NULL, &TfRoutine, (void *)&nh_);
     pthread_join(pth_, 0);
-    ros::spin();
 }

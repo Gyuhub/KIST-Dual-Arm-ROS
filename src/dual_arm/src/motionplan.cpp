@@ -57,7 +57,7 @@ void CMotionPlan::solve()
 			_result_mat_pos.block<3,1>(0, path_idx) = result_vec;
 			_result_mat_ori.block<4,1>(0, path_idx) = result_quat.coeffs();
 		}
-		_path_smooth->printAsMatrix(std::cout);// Print geometric Solution as matrix
+		//_path_smooth->printAsMatrix(std::cout);// Print geometric Solution as matrix
 		_planner->clear();
 		_pdef->clearSolutionPaths();
 	}
@@ -107,7 +107,7 @@ void CMotionPlan::solveWithoutSmoothing()
 			_result_mat_pos.block<3,1>(0, path_idx) = result_vec;
 			_result_mat_ori.block<4,1>(0, path_idx) = result_quat.coeffs();
 		}
-		pth->printAsMatrix(std::cout);// Print geometric Solution as matrix
+		//pth->printAsMatrix(std::cout);// Print geometric Solution as matrix
 		_planner->clear();
 		_pdef->clearSolutionPaths();
 	}
@@ -255,7 +255,7 @@ void CMotionPlan::initialize()
 {
 	_result_mat_pos.setZero(3, 100);
 	_result_mat_ori.setZero(4, 100);
-	//ompl::msg::noOutputHandler();
+	ompl::msg::noOutputHandler();
 }
 
 // bool CStateValidityChecker::isValid(const ob::State *state) const

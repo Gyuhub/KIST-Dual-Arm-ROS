@@ -43,7 +43,7 @@ public:
 	Vector3d positionCubicSpline();
 	Vector3d velocityCubicSpline();
 	Quaterniond orientationCubicSpline();
-	Vector3d orientationVelocityCubicSpline(Vector3d omega); //(Vector3d omegaMatrix3d R) R is rotation matrix from base to body
+	Vector3d orientationVelocityCubicSpline(Matrix3d R_des); //(Vector3d omegaMatrix3d R) R is rotation matrix from base to body
 private:
 	void Initialize();
 	void check_vector_size(VectorXd X);
@@ -51,6 +51,7 @@ private:
 	Matrix3d Theta(Vector4d x);
 	bool _bool_trajectory_complete;
 	bool _bool_pre_processing, _bool_initialization;
+	bool _bool_rotation_hold; // this flag is set when previous rotation matrix and current rotation matrix are same
 	double _phi;
 	double _dt;
 	Matrix3d _R[MAX_SIZE]; // Rotation matrices that contain the rotation matrix of each step from i = 0 to n

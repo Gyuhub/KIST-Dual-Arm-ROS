@@ -14,7 +14,6 @@ CController::~CController()
 	_log_sim_task.close();
 	if(_motion_plan_left_hand.is_open()) _motion_plan_left_hand.close();
 	if(_motion_plan_right_hand.is_open()) _motion_plan_right_hand.close();
-	_rot.close();
 	_quat.close();
 	_ori.close();
 }
@@ -722,12 +721,42 @@ void CController::motionPlan()
 		}
 		if (_cnt_plan == 3)
 		{
-			_pos_goal_left_hand(0) = 0.67;
+			_pos_goal_left_hand(0) = 0.6;
 		 	_pos_goal_left_hand(1) = 0.1;
 		 	_pos_goal_left_hand(2) = 0.616;
 		 	_rpy_goal_left_hand(0) = 0.0 * DEG2RAD; //_x_right_hand(3);
 			_rpy_goal_left_hand(1) = -90.0 * DEG2RAD; //_x_right_hand(4);
 			_rpy_goal_left_hand(2) = 0.0 * DEG2RAD; //_x_right_hand(5);
+
+			_pos_goal_right_hand(0) = 0.72;
+		 	_pos_goal_right_hand(1) = -0.2;
+		 	_pos_goal_right_hand(2) = 0.616;
+		 	_rpy_goal_right_hand(0) = 90.0 * DEG2RAD; //_x_right_hand(3);
+			_rpy_goal_right_hand(1) = 0.0 * DEG2RAD; //_x_right_hand(4);
+			_rpy_goal_right_hand(2) = 90.0 * DEG2RAD; //_x_right_hand(5);
+			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
+							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
+		}
+		if (_cnt_plan == 4)
+		{
+			_pos_goal_left_hand(0) = 0.72;
+		 	_pos_goal_left_hand(1) = 0.2;
+		 	_pos_goal_left_hand(2) = 0.616;
+		 	_rpy_goal_left_hand(0) = 90.0 * DEG2RAD; //_x_right_hand(3);
+			_rpy_goal_left_hand(1) = 0.0 * DEG2RAD; //_x_right_hand(4);
+			_rpy_goal_left_hand(2) = 90.0 * DEG2RAD; //_x_right_hand(5);
+
+			_pos_goal_right_hand(0) = 0.6;
+		 	_pos_goal_right_hand(1) = -0.1;
+		 	_pos_goal_right_hand(2) = 0.616;
+		 	_rpy_goal_right_hand(0) = 0.0 * DEG2RAD; //_x_right_hand(3);
+			_rpy_goal_right_hand(1) = 90.0 * DEG2RAD; //_x_right_hand(4);
+			_rpy_goal_right_hand(2) = 180.0 * DEG2RAD; //_x_right_hand(5);
+			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
+							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
+		}
+		if (_cnt_plan == 5)
+		{
 			resetMotionPlan(_pos_goal_left_hand, _rpy_goal_left_hand, _pos_goal_right_hand, _rpy_goal_right_hand,
 							_pos_start_left_hand, _rpy_start_left_hand, _pos_start_right_hand, _rpy_start_right_hand);
 		}
@@ -815,19 +844,19 @@ void CController::trajectoryPlan()
 	}
 	if(_bool_traj_plan(_cnt_traj_plan) == 1)
 	{
-		cout << "//////////  trajetory plan " << _cnt_traj_plan  << " start.  //////////\n" << endl << endl;
+		// cout << "//////////  trajetory plan " << _cnt_traj_plan  << " start.  //////////\n" << endl << endl;
 		if (_cnt_traj_plan < _size_motion_plan_left_hand)
 		{
 			_x_traj_goal_left_hand.head(3) = _traj_pos_goal_left_hand.block<3, 1>(0, _cnt_traj_plan);
 			_x_traj_goal_left_hand.tail(4) = _traj_ori_goal_left_hand.block<4, 1>(0, _cnt_traj_plan);
-			cout << " ( Trajectory Goal left hand ) : " << _x_traj_goal_left_hand.transpose() << '\n';
+			// cout << " ( Trajectory Goal left hand ) : " << _x_traj_goal_left_hand.transpose() << '\n';
 			//_xdot_traj_goal_left_hand.setZero();
 		}
 		if (_cnt_traj_plan < _size_motion_plan_right_hand)
 		{
 			_x_traj_goal_right_hand.head(3) = _traj_pos_goal_right_hand.block<3, 1>(0, _cnt_traj_plan);
 			_x_traj_goal_right_hand.tail(4) = _traj_ori_goal_right_hand.block<4, 1>(0, _cnt_traj_plan);
-			cout << " ( Trajectory Goal right hand ) : " << _x_traj_goal_right_hand.transpose() << '\n';
+			// cout << " ( Trajectory Goal right hand ) : " << _x_traj_goal_right_hand.transpose() << '\n';
 			//_xdot_traj_goal_right_hand.setZero();
 		}
 		_cnt_traj_plan++;	
@@ -1030,18 +1059,20 @@ void CController::control_mujoco(_Float64 _joy_command[])
 		{
 			_start_time = _init_t;
 			_end_time = _start_time + 1.0; // for offline planning
-			cout << "\nstart time = [" << _start_time  << "], end time = [" << _end_time << "]\n";
-			// Make velocity to become zero when they rec trajectory goal
-			if (_bool_traj_finished == true) {
-				_xdot_traj_goal_left_hand.setZero();
-				_xdot_traj_goal_right_hand.setZero();
-				_bool_traj_finished = false;
-			}
-			else {
-				_xdot_traj_goal_left_hand = _xdot_left_hand;
-				_xdot_traj_goal_right_hand = _xdot_right_hand;
-			}
+			// cout << "\nstart time = [" << _start_time  << "], end time = [" << _end_time << "]\n";
 			
+			// Make velocity to become zero when they rec trajectory goal
+			// if (_bool_traj_finished == true) {
+			// 	_xdot_traj_goal_left_hand.setZero();
+			// 	_xdot_traj_goal_right_hand.setZero();
+			// 	_bool_traj_finished = false;
+			// }
+			// else {
+			// 	_xdot_traj_goal_left_hand = _xdot_left_hand;
+			// 	_xdot_traj_goal_right_hand = _xdot_right_hand;
+			// }
+			_xdot_traj_goal_left_hand.setZero();
+			_xdot_traj_goal_right_hand.setZero();
 			// _xdot_traj_goal_left_hand = _xdot_left_hand;
 			// _xdot_traj_goal_right_hand = _xdot_right_hand;
 
@@ -1065,15 +1096,13 @@ void CController::control_mujoco(_Float64 _joy_command[])
 		_x_q_des_left_hand.head(3) = LeftHandTrajectory.positionCubicSpline(); 
 		_x_q_dot_des_left_hand.head(3) = LeftHandTrajectory.velocityCubicSpline();
 		_x_q_des_left_hand.tail(4) = LeftHandTrajectory.orientationCubicSpline().coeffs();
-		_x_q_dot_des_left_hand.tail(3) = LeftHandTrajectory.orientationVelocityCubicSpline(_xdot_left_hand.tail(3)); //_omega_left_hand, _R_left_hand
-		Matrix3d mat = LeftHandTrajectory.orientationCubicSpline().toRotationMatrix();
-		_rot << _t << ' ' << mat(0, 0) << ' ' << mat(1, 0) << ' ' << mat(2, 0) << ' ' << mat(0, 1) << ' ' << mat(1, 1) << ' ' << mat(2, 1) << ' ' << mat(0, 2) << ' ' << mat(1, 2) << ' ' << mat(2, 2) << '\n';
+		_x_q_dot_des_left_hand.tail(3) = LeftHandTrajectory.orientationVelocityCubicSpline(_R_left_hand); //_omega_left_hand, _R_left_hand
 
 		RightHandTrajectory.update_time(_t);
 		_x_q_des_right_hand.head(3) = RightHandTrajectory.positionCubicSpline();
 		_x_q_dot_des_right_hand.head(3) = RightHandTrajectory.velocityCubicSpline();
 		_x_q_des_right_hand.tail(4) = RightHandTrajectory.orientationCubicSpline().coeffs();
-		_x_q_dot_des_right_hand.tail(3) = RightHandTrajectory.orientationVelocityCubicSpline(_xdot_right_hand.tail(3)); //_omega_right_hand, _R_right_hand
+		_x_q_dot_des_right_hand.tail(3) = RightHandTrajectory.orientationVelocityCubicSpline(_R_right_hand); //_omega_right_hand, _R_right_hand
 
 		if (_control_mode == 2)
 		{
@@ -1136,7 +1165,7 @@ void CController::control_mujoco(_Float64 _joy_command[])
 
 		if (LeftHandTrajectory.check_trajectory_complete() == 1 || RightHandTrajectory.check_trajectory_complete() == 1)
 		{
-			cout << "Currnet trajectory plan count: " << _cnt_traj_plan << endl;
+			// cout << "Currnet trajectory plan count: " << _cnt_traj_plan << endl;
 			// _bool_joy_plan(_cnt_plan) = 1; // for joystick
 			// _bool_joy_button_push = false;  // for joystick
 			_bool_init = true;
@@ -1154,21 +1183,8 @@ void CController::control_mujoco(_Float64 _joy_command[])
 				reset_target(1.0, _q_home);
 			}
 			_bool_traj_finished = true;
-			cout << "////////// Trajectory reached to goal of motion plan! //////////" << '\n';
 			LeftHandTrajectory.increaseStep();
 			RightHandTrajectory.increaseStep();
-			// cout << "\nleft norm : " << (_x_left_hand - _traj_goal_left_hand.block<6, 1>(0, _state_count_left_hand - 1)).cwiseAbs().norm() << endl;
-			// cout << "\nright norm : " << (_x_right_hand - _traj_goal_right_hand.block<6, 1>(0, _state_count_right_hand - 1)).cwiseAbs().norm() << endl;
-			// cout << "\nthreshold norm : " << _traj_threshold.norm() << endl;
-			// if (((_x_left_hand - _traj_goal_left_hand.block<6, 1>(0, _state_count_left_hand - 1)).cwiseAbs().norm() < _traj_threshold.norm()) &&
-			//     ((_x_right_hand - _traj_goal_right_hand.block<6, 1>(0, _state_count_right_hand - 1)).cwiseAbs().norm() < _traj_threshold.norm()))
-			// 	{
-			// 		_cnt_traj_plan = 0;
-			// 	_bool_traj_plan.setZero();
-			// 	_bool_traj_plan(0) = 1;
-			// 	cout << "Reset Bool Trajectory Plan!! Bool Trajectory plan : " << _bool_traj_plan.transpose() << endl;
-			// 	_bool_plan(_cnt_plan) = 1;
-			// 	}
 			
 			// for repeating task !!!!!!!!!!!!!!!!!!!!!!!!!
 			// if(_cnt_plan == 5)
@@ -1625,8 +1641,8 @@ void CController::ReducedHQPTaskSpaceControl()
 
 	_kp = 100.0;
 	_kd = 20.0;
-	_ko = 1000.0; // _ko = _kp * 20;
-	_ka = 30.0; // _ka = std::sqrt(_ko);
+	_ko = 100.0; // _ko = _kp * 20;
+	_ka = 20.0; // _ka = std::sqrt(_ko);
 
 	// For original cubic spline trajectory
 	// _x_err_left_hand = _x_des_left_hand.head(3) - Model._x_left_hand;
@@ -1673,9 +1689,9 @@ void CController::ReducedHQPTaskSpaceControl()
 	_xddot_star.segment(0, 3) = _kp * _x_err_left_hand + _kd * _xdot_err_left_hand + _acc_workspace_avoid_left;
 	_xddot_star.segment(6, 3) = _kp * _x_err_right_hand + _kd * _xdot_err_right_hand + _acc_workspace_avoid_left;
 
-	_quat << _x_q_des_right_hand.tail(4).transpose() << ' ' << _t  << '\n';
+	_quat << _x_q_des_left_hand.tail(4).transpose() << ' ' << _t  << '\n';
 	//_ori << _x_q_dot_des_left_hand.tail(3).transpose() << ' ' << _t << '\n';
-	_ori << _x_q_right_hand.tail(4).transpose() << ' ' << _t << '\n';
+	_ori << _x_q_left_hand.tail(4).transpose() << ' ' << _t << '\n';
 	if (_bool_safemode == false)
 	{
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2410,7 +2426,6 @@ void CController::Initialize()
 		// _motion_plan_left_hand << "lh_x" << '\t' << "lh_y" << '\t' << "lh_z" << '\t' << "lh_R" << '\t' << "lh_P" << '\t' << "lh_Y" << '\n';
 		// _motion_plan_right_hand << "rh_x" << '\t' << "rh_y" << '\t' << "rh_z" << '\t' << "rh_R" << '\t' << "rh_P" << '\t' << "rh_Y" <<'\n'; 
 	}
-	_rot.open("/home/kist/cubic-spline/rot.txt");
 	_quat.open("/home/kist/cubic-spline/des.txt");
 	_ori.open("/home/kist/cubic-spline/ori.txt");
 }

@@ -93,6 +93,7 @@ namespace MjOmpl
         ob::State *_start;
         ob::State *_goal;
         ob::State *_state;
+        ob::ScopedState<> *back;
     };
 
     class CStateValidityChecker : public base::StateValidityChecker

@@ -45,6 +45,7 @@ void CTrajectory::Initialize()
 
 	_bool_pre_processing = false;
 	_bool_initialization = false;
+	_bool_rotation_hold = false;
 
 	_init_w.setZero();
 	_init_alpha.setZero();
@@ -97,7 +98,6 @@ void CTrajectory::reset_initial(double time0, VectorXd init_pos, VectorXd init_v
 	// remove it
 	// _start_ori.coeffs() = _init_pos.tail(4).normalized();
 	_start_ori_vel = _init_vel.tail(3);
-
 	_bool_trajectory_complete = false;
 }
 
@@ -132,6 +132,8 @@ void CTrajectory::update_goal(VectorXd goal_pos, VectorXd goal_vel, double goal_
 	// _end_ori.coeffs() = _goal_pos.tail(4).normalized();
 	_end_ori_vel = _goal_vel.tail(3);
 	_time_end = goal_time;
+	if ((_R[_i - 1] - _R[_i]) == Matrix3d::Zero(3, 3)) _bool_rotation_hold = true;
+	else _bool_rotation_hold = false;
 }
 
 VectorXd CTrajectory::position_cubicSpline()
@@ -179,20 +181,21 @@ Vector3d CTrajectory::positionCubicSpline()
 
 Quaterniond CTrajectory::orientationCubicSpline()
 {
-	// if (_time <= _time_start)
-	// {
-	// 	_qd = _R[_i - 1];
-	// }
-	// else
-	// {
+	if (_bool_rotation_hold == true)
+	{
+		_qd = _R[_i];
+		_qd_pre = _qd;
+	}
+	else
+	{
 		double tau_ = (_time - _time_start) / (_time_end - _time_start);
 		_x = _a[_i] * (std::pow(tau_, 3.0)) + _b[_i] * (std::pow(tau_, 2.0)) + _c[_i] * tau_ + _z;
 		double x_square = _x.transpose() * _x;
 		Matrix3d R_ = _R[_i - 1] * Theta(_x) / x_square;
 		_qd = R_;
-		if ((_qd.w() * _qd_pre.w()) < 0) for (int i = 0; i < 4; i++) _qd.coeffs()(i) = _qd.coeffs()(i) * -1.0;
+		// if ((_qd.w() * _qd_pre.w()) < 0) for (int i = 0; i < 4; i++) _qd.coeffs()(i) = _qd.coeffs()(i) * -1.0;
 		_qd_pre = _qd;
-	// }
+	}
 	return _qd;
 }
 
@@ -237,7 +240,7 @@ Vector3d CTrajectory::velocityCubicSpline()
 	return xdotd;
 }
 
-Vector3d CTrajectory::orientationVelocityCubicSpline(Vector3d omega)
+Vector3d CTrajectory::orientationVelocityCubicSpline(Matrix3d R_)
 {
 	if (_time <= _time_start)
 	{
@@ -266,10 +269,15 @@ Vector3d CTrajectory::orientationVelocityCubicSpline(Vector3d omega)
 		M_inv << -q_d_(1) , q_d_(0) , q_d_(3) , -q_d_(2)
 				,-q_d_(2) ,-q_d_(3) , q_d_(0) ,  q_d_(1)
 				,-q_d_(3) , q_d_(2) ,-q_d_(1) ,  q_d_(0);
+		// M_inv << -q_d_(1) , q_d_(0) ,-q_d_(3) ,  q_d_(2)
+		// 		,-q_d_(2) , q_d_(3) , q_d_(0) , -q_d_(1)
+		// 		,-q_d_(3) ,-q_d_(2) , q_d_(1) ,  q_d_(0);
 		Vector4d qdot_d_;
-		Vector3d omega_ = omega * _dt;
-		double phi_ = std::sqrt(omega_(0)*omega_(0) + omega_(1)*omega_(1) + omega_(2)*omega_(2));
-		double phi_dot_ = (phi_d_ - phi_) * _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
+		Matrix3d R_ = _qd.toRotationMatrix();
+		
+
+		//double phi_dot_ = (phi_d_ - phi_) * _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
+		double phi_dot_ = 0.0;
 		qdot_d_(0) = -std::sin(phi_d_ / 2.0) * phi_dot_;
 		qdot_d_(1) = axis_d_(0) * std::cos(phi_d_) * phi_dot_;
 		qdot_d_(2) = axis_d_(1) * std::cos(phi_d_) * phi_dot_;
@@ -317,7 +325,7 @@ void CTrajectory::preProcessing(int state_size)
 			Matrix3d skew_rot_mat_;
 			skew_rot_mat_.setZero();
 			skew_rot_mat_ = (_R[i - 1].transpose() * _R[i]);
-			if (((skew_rot_mat_.transpose() + skew_rot_mat_) / 2.0).isIdentity())
+			if ((skew_rot_mat_.transpose() - skew_rot_mat_) == Matrix3d::Zero(3, 3))
 			{
 				_phi = 0.0;
 				_q[i].head(3) = Eigen::Vector3d::Zero(3);

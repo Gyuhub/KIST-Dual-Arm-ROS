@@ -1,0 +1,8 @@
+prefix=/home/kist/KIST-Dual-Arm-ROS/devel
+
+Name: dual_arm_ros
+Description: Description of dual_arm_ros
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

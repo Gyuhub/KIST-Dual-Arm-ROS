@@ -1,2 +1,2 @@
-dual_arm:tf_test
+dual_arm:dual_arm_ros:tf_test
 -DCATKIN_DEVEL_PREFIX=/home/kist/KIST-Dual-Arm-ROS/devel -DCMAKE_INSTALL_PREFIX=/home/kist/KIST-Dual-Arm-ROS/install -G Unix Makefiles
