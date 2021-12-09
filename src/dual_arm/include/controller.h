@@ -136,13 +136,13 @@ private:
 	MatrixXd _J_pos_T_hands; // 15x6
 	MatrixXd _J_ori_hands; // 6x15
 	MatrixXd _J_ori_T_hands; // 15x6	
-
+public:
 	//operational space variables (two hand)
 	VectorXd _x_left_hand; //state
 	VectorXd _x_right_hand; //state
 	VectorXd _xdot_left_hand; //state
 	VectorXd _xdot_right_hand; //state
-
+private:
 	MatrixXd _Lambda_hands; //inertia matrix 12x12
 	MatrixXd _Lambda_hands_prism; // inertia matrix 1x1
 	MatrixXd _Null_hands; //null space projection matrix 15x15

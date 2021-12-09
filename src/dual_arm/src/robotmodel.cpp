@@ -201,14 +201,16 @@ void CModel::calculate_EE_velocity()
 	{
 		_xdot_left_hand = _J_left_hand * _qdot;
 		_xdot_right_hand = _J_right_hand * _qdot;
-		_w_left_hand = _xdot_left_hand.tail(3);
-		_w_right_hand = _xdot_right_hand.tail(3);
-		// _w_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_left_hand);
-		// _w_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(_R_right_hand);
-		_omega_left_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false);
-		_omega_right_hand = RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false);
-		//_w_left_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false).head(3);
-		//_w_right_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false).head(3);
+
+		// _w_left_hand = _xdot_left_hand.tail(3);
+		// _w_right_hand = _xdot_right_hand.tail(3);
+		// _w_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(RigidBodyDynamics::CalcBodyWorldOrientation(_model, _q, _id_left_hand - 1, false) * _R_left_hand);
+		// _w_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(RigidBodyDynamics::CalcBodyWorldOrientation(_model, _q, _id_right_hand - 1, false) * _R_right_hand);
+
+		_omega_left_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(RigidBodyDynamics::CalcBodyWorldOrientation(_model, _q, _id_left_hand - 1, false) * _R_left_hand);
+		_omega_right_hand = RigidBodyDynamics::CalcAngularVelocityfromMatrix(RigidBodyDynamics::CalcBodyWorldOrientation(_model, _q, _id_right_hand - 1, false) * _R_right_hand);
+		_w_left_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_left_hand, _position_local_task_left_hand, false).head(3);
+		_w_right_hand = _global_rotate * RigidBodyDynamics::CalcPointVelocity6D(_model, _q, _qdot, _id_right_hand, _position_local_task_right_hand, false).head(3);
 	}
 	else
 	{
@@ -235,6 +237,12 @@ void CModel::calculate_Euler_To_Quat() // !!!!!!!!!!!!!!!!!!!!!
 	{
 		cout << "Robot's rotation matrix is not ready. Please update position and orientation first." << endl << endl;
 	}
+}
+
+Matrix3d CModel::calculate_EE_desired_rotation()
+{
+	Matrix3d R_des_;
+	return R_des_;
 }
 
 void CModel::set_robot_config()

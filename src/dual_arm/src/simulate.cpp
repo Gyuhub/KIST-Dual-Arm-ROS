@@ -1707,7 +1707,39 @@ void uiEvent(mjuiState* state)
 
 // sim thread synchronization
 std::mutex mtx;
+//--------------------------- Add geoms to simulation ----------------------------------
+void mjvAddGeom(mjvGeom *G, Eigen::Vector3d pos)
+{
+    G->type=mjGEOM_SPHERE;
+    G->dataid = -1;
+    G->objtype = mjOBJ_UNKNOWN;
+    G->objid = -1;
+    G->category = mjCAT_DECOR;
+    G->texid = -1;
+    G->texuniform = 0;
+    G->texrepeat[0] = 1;
+    G->texrepeat[1] = 1;
+    G->emission = 0;
+    G->specular = 0;
+    G->shininess = 0;
+    G->reflectance = 0;
 
+    G->size[0] = 0;
+    G->size[1] = 0;
+    G->size[2] = 0;
+    G->rgba[0] = 1.0;
+    G->rgba[1] = G->rgba[2] = 0;
+    G->rgba[3] = 1;
+    G->pos[0] = pos(0);
+    G->pos[1] = pos(1);
+    G->pos[2] = pos(2);
+    G->mat[0] = 1;
+    G->mat[1] = 1;
+    G->mat[2] = 1;
+    memset(G->label, 0, 100);
+    G->label[0] = '.';
+    return;
+}
 
 // prepare to render
 void prepare(void)
@@ -1727,7 +1759,18 @@ void prepare(void)
 
     // update scene
     mjv_updateScene(m, d, &vopt, &pert, &cam, mjCAT_ALL, &scn);
+//------------------------- Add geoms to scene -------------------------
+    mjvGeom G_left_hand, G_right_hand;
+    mjvAddGeom(&G_left_hand, Control._x_left_hand.head(3));
+    mjvAddGeom(&G_right_hand, Control._x_right_hand.head(3));
 
+    mjvGeom *Gptr_left_hand = scn.geoms + scn.ngeom;
+    *Gptr_left_hand = G_left_hand;
+    scn.ngeom++;
+    mjvGeom *Gptr_right_hand = scn.geoms + scn.ngeom;
+    *Gptr_right_hand = G_right_hand;
+    scn.ngeom++;
+//----------------------------------------------------------------------
     // update watch 
     if( settings.ui0 && ui0.sect[SECT_WATCH].state )
     {
@@ -2095,9 +2138,9 @@ int main(int argc, char** argv)
     // ios::sync_with_stdio(false); // for the purpose of enhancing I/O speed
     // cin.tie(0); cout.tie(0); // for the purpose of enhancing I/O speed
     // initialize everything
+    settings.color = 4; // Black color ui
     init();
     ros::init(argc, argv, "dual_arm_simulate");
-    
     char str[100] = "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/model/test.xml";
     //char str[100] = "/home/kist/KIST-Dual-Arm-ROS/src/dual_arm/model/dualarm_hands_mod_sim.xml";
     

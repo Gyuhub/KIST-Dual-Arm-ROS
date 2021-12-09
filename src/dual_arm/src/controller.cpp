@@ -1085,13 +1085,6 @@ void CController::control_mujoco(_Float64 _joy_command[])
 			_bool_ee_motion = true;
 		}
 
-		/**
-		 * TODO: _x_q_des_left_hand.tail(4) = LeftHandTrajectory.orientationCubicSpline();
-		 * _x_q_dot_des_left_hand.tail(4) = LeftHandTrajectory.orientationVelocityCubicSpline();
-		 * _x_q_des_right_hand.tail(4) = RightHandTrajectory.orientationCubicSpline();
-		 * _x_q_dot_des_right_hand.tail(4) = RightHandTrajectory.orientationVelocityCubicSpline();
-		 */
-
 		LeftHandTrajectory.update_time(_t);
 		_x_q_des_left_hand.head(3) = LeftHandTrajectory.positionCubicSpline(); 
 		_x_q_dot_des_left_hand.head(3) = LeftHandTrajectory.velocityCubicSpline();

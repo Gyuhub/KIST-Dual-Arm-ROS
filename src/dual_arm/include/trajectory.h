@@ -6,6 +6,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <complex>
+#include <rbdl/rbdl.h>
 #include "custommath.h"
 using namespace std;
 using namespace Eigen;

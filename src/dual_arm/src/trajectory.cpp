@@ -240,7 +240,7 @@ Vector3d CTrajectory::velocityCubicSpline()
 	return xdotd;
 }
 
-Vector3d CTrajectory::orientationVelocityCubicSpline(Matrix3d R_)
+Vector3d CTrajectory::orientationVelocityCubicSpline(Matrix3d R)
 {
 	if (_time <= _time_start)
 	{
@@ -273,16 +273,20 @@ Vector3d CTrajectory::orientationVelocityCubicSpline(Matrix3d R_)
 		// 		,-q_d_(2) , q_d_(3) , q_d_(0) , -q_d_(1)
 		// 		,-q_d_(3) ,-q_d_(2) , q_d_(1) ,  q_d_(0);
 		Vector4d qdot_d_;
-		Matrix3d R_ = _qd.toRotationMatrix();
-		
 
-		//double phi_dot_ = (phi_d_ - phi_) * _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
+		// double phi_dot_ = (phi_d_ - phi_) / _dt; // if dt is too small, it's value effects to phi_dot too much when we calculate phi_dot. so we do multiply dt to phi_dot.
 		double phi_dot_ = 0.0;
 		qdot_d_(0) = -std::sin(phi_d_ / 2.0) * phi_dot_;
 		qdot_d_(1) = axis_d_(0) * std::cos(phi_d_) * phi_dot_;
 		qdot_d_(2) = axis_d_(1) * std::cos(phi_d_) * phi_dot_;
 		qdot_d_(3) = axis_d_(2) * std::cos(phi_d_) * phi_dot_;
+
 		_wdotd = 2 * M_inv * qdot_d_; // desired angular velocity of body frame, not world
+		
+		// _wdotd = RigidBodyDynamics::CalcAngularVelocityfromMatrix(R.transpose() * _qd.toRotationMatrix());
+
+		// Matrix3d R_des_ = _qd.toRotationMatrix();
+		// _wdotd = RigidBodyDynamics::CalcAngularVelocityfromMatrix(R_des_);
 		return _wdotd;
 	}
 }

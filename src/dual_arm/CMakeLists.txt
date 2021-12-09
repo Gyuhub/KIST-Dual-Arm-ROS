@@ -17,9 +17,9 @@ find_package(OpenGL REQUIRED)
 
 find_package(GLEW REQUIRED)
 
-if(NOT OMPL_INCLUDE_DIRS)
-	find_package(ompl REQUIRED)
-endif()
+# if(NOT OMPL_INCLUDE_DIRS)
+# 	find_package(ompl REQUIRED)
+# endif()
 
 set(SRC_FILES
     src/controller.cpp

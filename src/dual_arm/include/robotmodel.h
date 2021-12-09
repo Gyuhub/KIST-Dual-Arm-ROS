@@ -27,6 +27,8 @@ public:
 	void calculate_EE_velocity();
 	void calculate_Euler_To_Quat(); // Quaternion
 
+	Matrix3d calculate_EE_desired_rotation();
+
 	RigidBodyDynamics::Model _model;
 	MatrixXd _A; //inertia matrix Jdof x Jdof
 	VectorXd _g; //gravity force vector

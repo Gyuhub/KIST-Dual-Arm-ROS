@@ -1,6 +1,6 @@
 <launch>
 
-  <arg name="model" default="$(find dual_arm)/model/dualarm_mod_test.urdf meshDirectory:=$(find dual_arm)/model/meshes/" />
+  <arg name="model" default="$(find dual_arm)/model/dualarm_mod.urdf meshDirectory:=$(find dual_arm)/model/meshes/" />
   <arg name="gui" default="true" />
   <arg name="rvizconfig" default="$(find dual_arm)/rviz/urdf.rviz" />
 
