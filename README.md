@@ -11,9 +11,11 @@
 ```sh
 git clone https://github.com/rbdl/rbdl
 cd rbdl
+code . # or choose specific text editor what you want
+(you need to search "boost::" and replace them to "std::" on an urdfreader.cc file)
 mkdir build
 cd build
-cmake -D CMAKE_BUILD_TYPE=Release -DRBDL_BUILD_ADDON_URDFREADER=ON -DRBDL_USR_ROS_URDF_LIBRARY=OFF ..
+cmake -D CMAKE_BUILD_TYPE=Release -DRBDL_BUILD_ADDON_URDFREADER=ON ..
 make all
 make install
 sudo ldconfig
